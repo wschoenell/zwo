@@ -43,6 +43,7 @@
 #include <linux/reboot.h>              /* to run as 'root' */
 #include <netinet/in.h>                /* IPPROTO_TCP */
 #include <netinet/tcp.h>               /* TCP_NODELAY */
+#include <time.h>                      /* clock_gettime() */
 
 #if (TIME_TEST > 0)
 #include <limits.h>
@@ -91,6 +92,12 @@ static u_char *asi_data=NULL;
 static u_char *video_data1=NULL,*video_data2=NULL; // v0024
 static u_int video_seq=0,video_last=0;
 static volatile int video_running=0;   /* run_video thread alive */
+/* per-frame receive timestamp [ns], [0]=video_data1 [1]=video_data2.
+ * CLOCK_REALTIME so two NTP/PTP-synced hosts can be cross-correlated
+ * on absolute time; switch to CLOCK_TAI on PTP deployments to be
+ * immune to leap-second steps. */
+#define TS_CLOCK CLOCK_REALTIME
+static unsigned long long video_ts[2];
 /* safety margin on buffers passed to the SDK: ASIGetVideoData was
  * observed to write past w*h*bytes at 16-bit large ROIs (ASI294MM Pro,
  * SDK 1.20.2) corrupting the heap -> SEGV in a later realloc */
@@ -685,8 +692,9 @@ static int handle_command(const char* command,char* answer,size_t buflen)
         asi_size = zwo_w * zwo_h * zwo_bits/8;
         asi_data = (u_char*)realloc(asi_data,asi_size);
         memcpy(asi_data,data,asi_size); // don't shift here v0028 
-        sprintf(answer,"%u %.1f %.0f",video_last,
-                asi_temperature,asi_cooler_power);
+        sprintf(answer,"%u %.1f %.0f %llu",video_last,
+                asi_temperature,asi_cooler_power,
+                video_ts[(video_last % 2) ? 1 : 0]);
       } else {
         strcpy(answer,"-Enodata");
       }
@@ -1018,6 +1026,16 @@ static void* run_tcpip(void* param)
 
 /* ---------------------------------------------------------------- */
 
+static unsigned long long time_ns(void) /* TS_CLOCK in nanoseconds */
+{
+  struct timespec tp;
+  clock_gettime(TS_CLOCK,&tp);
+  return (unsigned long long)tp.tv_sec*1000000000ull
+       + (unsigned long long)tp.tv_nsec;
+}
+
+/* ---------------------------------------------------------------- */
+
 static void* run_video(void* param)
 {
   int    wait,ret,size=zwo_w*zwo_h*zwo_bits/8;
@@ -1044,7 +1062,8 @@ static void* run_video(void* param)
     // printf("writing to buffer %d\n",(data==video_data1) ? 1 : 2);
     ret = ASIGetVideoData(asi_id,data,size,wait);
     if (ret == ASI_SUCCESS) {
-      __sync_synchronize();  /* frame data visible before seq (arm64) */
+      video_ts[(video_seq % 2) ? 0 : 1] = time_ns(); /* slot of 'data' */
+      __sync_synchronize();  /* frame data+ts visible before seq (arm64) */
       video_seq++;
     }
   }

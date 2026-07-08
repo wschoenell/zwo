@@ -478,7 +478,7 @@ class ZwoEmulator:
                     self.image_data = self.video_data
                     self.image_size = len(self.image_data) if self.image_data else 0
                     binary_data = self.image_data
-                    response = f"{self.video_last} {self.temperature:.1f} {self.cooler_power:.0f}"
+                    response = f"{self.video_last} {self.temperature:.1f} {self.cooler_power:.0f} {time.time_ns()}"
                 else:
                     response = "-Enodata"
                 
