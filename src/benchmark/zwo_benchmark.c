@@ -10,9 +10,8 @@
  * sweep loop are complete. The per-configuration warmup +
  * measurement window is a stub and will be filled in next.
  *
- * TODO: sweep ASI_BANDWIDTHOVERLOAD once zwoserver.c exposes a
- *       command to set it (currently only EXPOSURE/GAIN/OFFSET/
- *       COOLER/TARGET_TEMP/FAN are wired through handle_asi()).
+ * ASI_BANDWIDTHOVERLOAD is set via the server's 'usb' command
+ * (--usb N, 40..100); sweep it by running once per value.
  *
  * ---------------------------------------------------------------- */
 
@@ -52,8 +51,8 @@ typedef struct {
   int         bitdepths[MAX_BITS];
   int         n_roi;
   double      rois[MAX_ROIS];      /* window size, percent of full frame */
-  int         gain, offset;
-  int         have_gain, have_offset;
+  int         gain, offset, usb, highspeed;
+  int         have_gain, have_offset, have_usb, have_highspeed;
   const char *csv_path;
   int         verbose;
 } BenchCfg;
@@ -275,6 +274,8 @@ static void usage(const char *prog)
 "  --next-timeout SEC      (default: 2.0)\n"
 "  --gain N                (optional)\n"
 "  --offset N              (optional)\n"
+"  --usb N                 ASI_BANDWIDTHOVERLOAD 40..100 (optional)\n"
+"  --highspeed N           ASI_HIGH_SPEED_MODE 0/1, 10-bit ADC (optional)\n"
 "  --csv PATH              (optional)\n"
 "  -v, --verbose\n"
 "  -h, --help\n", prog, SERVER_PORT);
@@ -295,6 +296,8 @@ static int parse_args(int argc, char **argv, BenchCfg *c)
     {"next-timeout", required_argument, 0, 't'},
     {"gain",         required_argument, 0, 'g'},
     {"offset",       required_argument, 0, 'o'},
+    {"usb",          required_argument, 0, 'u'},
+    {"highspeed",    required_argument, 0, 'S'},
     {"csv",          required_argument, 0, 'c'},
     {"verbose",      no_argument,       0, 'v'},
     {"help",         no_argument,       0, 'h'},
@@ -336,6 +339,8 @@ static int parse_args(int argc, char **argv, BenchCfg *c)
     case 't': c->next_timeout_s = atof(optarg); break;
     case 'g': c->gain = atoi(optarg); c->have_gain = 1; break;
     case 'o': c->offset = atoi(optarg); c->have_offset = 1; break;
+    case 'u': c->usb = atoi(optarg); c->have_usb = 1; break;
+    case 'S': c->highspeed = atoi(optarg); c->have_highspeed = 1; break;
     case 'c': c->csv_path = optarg; break;
     case 'v': c->verbose = 1; break;
     case 'h':
@@ -472,8 +477,11 @@ static void print_session_banner(const BenchCfg *cfg, const char *model,
                                  int W, int H, int cooler, int color,
                                  int bitDepth)
 {
-  printf("ZWO benchmark   host=%s:%d   duration=%.1fs   warmup=%.1fs\n",
+  printf("ZWO benchmark   host=%s:%d   duration=%.1fs   warmup=%.1fs",
          cfg->host, cfg->port, cfg->duration_s, cfg->warmup_s);
+  if (cfg->have_usb) printf("   usb=%d", cfg->usb);
+  if (cfg->have_highspeed) printf("   highspeed=%d", cfg->highspeed);
+  printf("\n");
   printf("camera: %s  %dx%d  cooler=%d color=%d bitDepth=%d\n\n",
          model, W, H, cooler, color, bitDepth);
   fflush(stdout);
@@ -586,6 +594,8 @@ int main(int argc, char **argv)
 
   if (cfg.have_gain)   set_int_control(sock, "gain",   cfg.gain);
   if (cfg.have_offset) set_int_control(sock, "offset", cfg.offset);
+  if (cfg.have_usb)    set_int_control(sock, "usb",    cfg.usb);
+  if (cfg.have_highspeed) set_int_control(sock, "highspeed", cfg.highspeed);
 
   print_session_banner(&cfg, model, W, H, cooler, color, bitDepth);
 

@@ -98,6 +98,8 @@ static volatile int video_running=0;   /* run_video thread alive */
 static size_t asi_size=0;
 static double asi_startTime,asi_expTime;
 static int   asi_gain=0,asi_offset=10;
+static int   asi_usb=40;               /* ASI_BANDWIDTHOVERLOAD, SDK default */
+static int   asi_highspeed=0;          /* ASI_HIGH_SPEED_MODE (10-bit ADC) */
 static int   asi_cooler;
 static float asi_temperature,asi_target,asi_cooler_power;
 
@@ -600,6 +602,24 @@ static int handle_command(const char* command,char* answer,size_t buflen)
     }
     if (!err) sprintf(answer,"%d",asi_offset);
   } else
+  if (!strcasecmp(cmd,"usb")) {        /* ASI_BANDWIDTHOVERLOAD 40..100 */
+    if (zwo_state == ZWO_CLOSED) err = E_not_open;
+    if (!err && (n > 1)) {
+      asi_usb = atoi(par1);
+      sprintf(buf,"ASISetControlValue %d %d",ASI_BANDWIDTHOVERLOAD,asi_usb);
+      err = handle_asi(buf,answer,buflen);
+    }
+    if (!err) sprintf(answer,"%d",asi_usb);
+  } else
+  if (!strcasecmp(cmd,"highspeed")) {  /* ASI_HIGH_SPEED_MODE 0/1 */
+    if (zwo_state == ZWO_CLOSED) err = E_not_open;
+    if (!err && (n > 1)) {
+      asi_highspeed = atoi(par1);
+      sprintf(buf,"ASISetControlValue %d %d",ASI_HIGH_SPEED_MODE,asi_highspeed);
+      err = handle_asi(buf,answer,buflen);
+    }
+    if (!err) sprintf(answer,"%d",asi_highspeed);
+  } else
   if (!strcasecmp(cmd,"status")) {
     if (zwo_state == ZWO_EXPOSING) { int a,b;
       handle_asi("ASIGetExpStatus",answer,buflen);
@@ -1014,7 +1034,11 @@ static void* run_video(void* param)
       handle_command("tempcon",buf,sizeof(buf));
       next = cor_time(0)+30; // TODO every 30 seconds
     }
-    wait = 350+(int)(1000.0*asi_expTime); 
+    /* keep the GetVideoData timeout short: the SDK's CirBuf::ReadBuff
+     * occasionally misses a wakeup and sleeps the FULL timeout even
+     * though the frame is ready (366ms stalls with the old 350ms
+     * floor; stall length tracks this value) */
+    wait = 50+(int)(1000.0*asi_expTime);
     // printf("wait=%d, size=%u, seq=%u\n",wait,size,video_seq);
     data = (video_seq % 2) ? video_data1 : video_data2;
     // printf("writing to buffer %d\n",(data==video_data1) ? 1 : 2);
