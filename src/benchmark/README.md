@@ -37,7 +37,9 @@ zwo_benchmark [options]
   --usb N                 ASI_BANDWIDTHOVERLOAD 40..100 (optional)
   --highspeed N           ASI_HIGH_SPEED_MODE 0/1, 10-bit ADC (optional)
   --csv PATH              also write results as CSV (optional)
-  -v, --verbose           per-frame stderr logging
+  -v, --verbose           per-frame stderr logging (dt = client arrival
+                          interval, dts = server-side frame interval
+                          from the per-frame ns timestamps, v1.0.5+)
   -h, --help
 ```
 
@@ -214,6 +216,14 @@ Findings (after the 2026-07-08 server fixes, see below):
   `ASI_HIGH_SPEED_MODE`), and the `ASIGetVideoData` timeout floor
   lowered 350 ms -> 50 ms (SDK lost-wakeup stalls shrink from ~366 ms
   to ~65 ms).
+- **Per-frame ns timestamps** (server v1.0.5): `next` answers
+  `"seq temp power ts_ns"` — CLOCK_REALTIME at the instant the SDK
+  delivered the frame (switch `TS_CLOCK` to CLOCK_TAI on PTP hosts).
+  Backwards compatible: gcam's prefix `sscanf` ignores the new field
+  (audited; ZWOFinder and zwoclient.py don't use `next`). Measured at
+  193 Hz: true camera delivery jitter is **0.059 ms rms** vs 0.524 ms
+  seen client-side — the timestamps remove protocol/network jitter
+  from PSD data entirely.
 - Validated: 4 consecutive full 96-config sweeps + tiny-ROI set
   (396 configs, ~100 stop/setup/start transitions) with zero failures
   and zero crashes under gdb.

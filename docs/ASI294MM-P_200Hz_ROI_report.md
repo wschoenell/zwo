@@ -1,6 +1,6 @@
 # ZWO ASI294MM Pro at 200 Hz — small-ROI streaming test for fast tip-tilt
 
-**Date:** 2026-07-08 (rev. 3: USB-bandwidth sweep, stall fix, high-speed-mode test)
+**Date:** 2026-07-08 (rev. 4: per-frame ns timestamps; true camera jitter = 0.059 ms rms)
 **Camera:** ZWO ASI294MM Pro (mono, 8288×5644, 12-bit ADC), SDK 1.20.2
 **Server:** `zwoserver` on Raspberry Pi 4 (USB3 to camera), gigabit Ethernet
 **Client:** Raspberry Pi (`zwo-bootsrv`), same gigabit LAN, RTT 0.32 ms
@@ -49,15 +49,36 @@ delivers **193 fps = 96.5% efficiency, zero drops**, sustained.
 
 ## Frame-interval jitter at the operating point
 
-Per-frame arrival intervals (Δt) at bin 2, 200×140, 8-bit, 5 ms
-exposure, measured client-side over 20 s (~3900 frames):
+Measured at bin 2, 200×140, 8-bit, 5 ms exposure, over 30 s
+(~5700 frames).
 
-| statistic | value |
-|---|---|
-| mean Δt (core) | 5.19 ms → **192.6 Hz** |
-| σ (core) | **0.35 ms** |
-| p95 / p99 / max (core) | 5.5 / 5.6 / 6.3 ms |
-| stalls | **~65 ms, one per 3–10 s** (was ~366 ms before the timeout fix below) |
+The server (protocol v1.0.5) now stamps every frame with a
+nanosecond-precision `CLOCK_REALTIME` timestamp taken the instant the
+SDK delivers it, returned in the `next` header. This separates the
+camera's true timing from protocol/network jitter (backwards
+compatible — existing clients ignore the extra field):
+
+| statistic (30 s @ 193 Hz) | client arrival (Δt) | server stamp (Δts) |
+|---|---|---|
+| mean interval | 5.19 ms | 5.20 ms |
+| σ (core) | 0.52 ms | **0.059 ms** |
+| stalls | ~66 ms | ~65.4 ms (identical frames) |
+
+**The camera's true delivery jitter is 59 µs rms** — an order of
+magnitude tighter than what client-side arrival times show. PSD work
+should use the per-frame timestamps directly; the 0.5 ms client-side
+scatter is protocol/network and disappears. Stalls (~65 ms, one per
+3–10 s; was ~366 ms before the timeout fix below) appear identically
+in both series and are precisely stamped, so masking them is exact.
+
+For cross-camera correlation the two guider hosts should share a
+clock discipline: NTP gives ~ms alignment; **PTP (`ptp4l` +
+`phc2sys`) brings it to tens of µs** on Pi-class hardware (software
+timestamping) and disciplines the same `CLOCK_REALTIME` the stamps
+read — no code change needed; switch the server's `TS_CLOCK` define
+to `CLOCK_TAI` on PTP hosts to be immune to leap-second steps. The
+stamp marks end-of-USB-delivery, a per-configuration constant offset
+from exposure start.
 
 The core distribution is tight — 0.35 ms rms is small against a 5 ms
 frame period. Frame delivery does stall a few times per minute
@@ -159,7 +180,10 @@ on the Raspberry Pi — relevant to anyone reproducing this:
    40–100, `ASI_HIGH_SPEED_MODE` 0/1).
 5. **`ASIGetVideoData` timeout floor 350 ms → 50 ms**: cuts the
    SDK lost-wakeup stalls from ~366 ms to ~65 ms.
-6. `Restart=on-failure` added to the systemd unit.
+6. **Per-frame ns timestamps** (v1.0.5): `next` returns
+   `"seq temp power ts_ns"`; backwards compatible (audited against
+   all existing clients).
+7. `Restart=on-failure` added to the systemd unit.
 
 ## Reproducing
 
