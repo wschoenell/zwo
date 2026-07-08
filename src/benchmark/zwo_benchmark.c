@@ -179,12 +179,14 @@ static int recv_exact(int sock, u_char *buf, size_t nbytes, int timeout_s)
 }
 
 /* Fetch one video frame.
- *   return  0 : ok (seq/temp/power/buf populated)
+ *   return  0 : ok (seq/temp/power/ts_ns/buf populated)
  *   return  1 : server replied -Enodata (no frame within its own timeout)
  *   return <0 : error
- */
+ * ts_ns is the server-side CLOCK_REALTIME receive stamp (0 when the
+ * server predates protocol 1.0.5). */
 static int next_frame(int sock, double server_timeout_s,
                       unsigned int *seq, double *temp, double *power,
+                      unsigned long long *ts_ns,
                       u_char *buf, size_t nbytes, int recv_timeout_s)
 {
   char cmd[CMD_BUF], resp[LINE_BUF];
@@ -196,7 +198,9 @@ static int next_frame(int sock, double server_timeout_s,
     return -3;
   }
   int per = 0;
-  if (sscanf(resp, "%u %lf %d", seq, temp, &per) != 3) {
+  *ts_ns = 0;
+  int nf = sscanf(resp, "%u %lf %d %llu", seq, temp, &per, ts_ns);
+  if (nf < 3) {
     fprintf(stderr, "next: bad header '%s'\n", resp);
     return -4;
   }
@@ -412,6 +416,7 @@ static int run_one(int sock, const BenchCfg *cfg,
   int recv_timeout_s = (int)ceil(cfg->next_timeout_s + exptime + 1.0);
   unsigned int seq = 0, last_seq = 0;
   double temp = 0, power = 0;
+  unsigned long long ts_ns = 0, last_ts = 0;
 
   /* Warmup: discard frames for max(warmup_s, 5*exptime) AND >= 5 frames.
    * Covers TCP slow-start and any initial camera ramp. */
@@ -421,7 +426,7 @@ static int run_one(int sock, const BenchCfg *cfg,
   int warm = 0;
   while (!g_stop && (walltime(0) < t_warm_end || warm < 5)) {
     int r = next_frame(sock, cfg->next_timeout_s, &seq, &temp, &power,
-                       *buf, nbytes, recv_timeout_s);
+                       &ts_ns, *buf, nbytes, recv_timeout_s);
     if (r == 0) warm++;
     else if (r == 1) msleep(5);
     else {
@@ -439,7 +444,7 @@ static int run_one(int sock, const BenchCfg *cfg,
   double t_last = t0;
   while (!g_stop && walltime(0) < t_end) {
     int r = next_frame(sock, cfg->next_timeout_s, &seq, &temp, &power,
-                       *buf, nbytes, recv_timeout_s);
+                       &ts_ns, *buf, nbytes, recv_timeout_s);
     if (r == 1) { enodata++; msleep(5); continue; }
     if (r < 0) {
       snprintf(row->note, sizeof(row->note), "recv fail (%d)", r);
@@ -448,10 +453,13 @@ static int run_one(int sock, const BenchCfg *cfg,
     if (!first && seq > last_seq + 1) drops += (int)(seq - last_seq - 1);
     last_seq = seq; first = 0; frames++;
     if (cfg->verbose) {
+      /* dt = client-side arrival interval (protocol+network included),
+       * dts = server-side ASIGetVideoData interval (camera timing) */
       double t_now = walltime(0);
-      fprintf(stderr, "  seq=%u dt=%.4f temp=%.1f power=%.0f\n",
-              seq, t_now - t_last, temp, power);
-      t_last = t_now;
+      double dts = (last_ts && ts_ns) ? (double)(ts_ns - last_ts)/1e9 : 0.0;
+      fprintf(stderr, "  seq=%u dt=%.4f dts=%.4f ts=%llu temp=%.1f power=%.0f\n",
+              seq, t_now - t_last, dts, ts_ns, temp, power);
+      t_last = t_now; last_ts = ts_ns;
     }
   }
   double elapsed = walltime(0) - t0;
