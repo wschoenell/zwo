@@ -992,7 +992,7 @@ int put_string(const char* file,const char* key,char* string)
   char buffer[1024],comment[512],*lines[MAX_LINES],*h;
   FILE *fp;
  
-  fd = open(file,O_RDWR | O_CREAT);    /* open file read/write */
+  fd = open(file,O_RDWR | O_CREAT,00644);  /* open file read/write */
   if (fd == -1) {
     fprintf(stderr,"%s: put_string(%s,%s,%s): cannot open file\n",__FILE__,
             file,key,string);
@@ -1306,7 +1306,7 @@ int lockfile_open(const char* file)
   int  fd;
   char buf[32];
 
-  fd = open(file,O_RDWR | O_CREAT);    /* open lockfile */
+  fd = open(file,O_RDWR | O_CREAT,00644);  /* open lockfile */
   if (fd == -1) return(-1);            /* failed */
   if (lockf(fd,F_TLOCK,0) < 0) {       /* lock failed */
     close(fd);
