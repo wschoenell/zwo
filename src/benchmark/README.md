@@ -34,6 +34,8 @@ zwo_benchmark [options]
   --next-timeout SEC      timeout passed to 'next' (default: 2.0)
   --gain N                (optional)
   --offset N              (optional)
+  --usb N                 ASI_BANDWIDTHOVERLOAD 40..100 (optional)
+  --highspeed N           ASI_HIGH_SPEED_MODE 0/1, 10-bit ADC (optional)
   --csv PATH              also write results as CSV (optional)
   -v, --verbose           per-frame stderr logging
   -h, --help
@@ -169,10 +171,26 @@ Findings (after the 2026-07-08 server fixes, see below):
 - **200 Hz verdict: reachable at bin 2** with windows up to ~200x140
   binned pixels: 192-194 fps (96% efficiency) at 5 ms exposure, zero
   drops. At bin 1 even 80x56 only reaches ~105 fps.
-- **Untested lever**: `ASI_BANDWIDTHOVERLOAD` (USB bandwidth %, SDK
-  default 40) is not exposed by zwoserver; raising it should shrink
-  the per-row readout cost and lift the camera-limited ceilings
-  above (including the ~5.15 ms floor).
+- **`ASI_BANDWIDTHOVERLOAD` tested — no effect on small-ROI
+  ceilings.** Now exposed as the server's `usb` command
+  (`--usb N`, 40–100). Swept 40/60/80/100: every small-window ceiling
+  (86.4/55.6/35.0 Hz bin 1; 194/193/135 Hz bin 2, incl. the 5.15 ms
+  floor) is identical to 0.1% at all values — those are sensor readout
+  timing, not USB transfer. Only USB-limited large frames speed up
+  (bin 4 full-frame 16-bit: 6.8 fps @40 → ~10.8 fps @100).
+- **`ASI_HIGH_SPEED_MODE` tested — bin 1 only, +25%.** Exposed as the
+  server's `highspeed` command (`--highspeed 0/1`). Bin 1 readout gets
+  uniformly 25% faster (86.4→108.2, 55.6→69.7, 35.0→43.9 Hz; row time
+  38→30 µs) at the cost of a 10-bit ADC — still far below 200 Hz. Bin 2
+  (incl. the 5.15 ms floor), bin 4, and both bit depths are unaffected.
+  With both camera levers exhausted, ~193 Hz at bin 2 ≤200x140 is the
+  ceiling for this camera + SDK.
+- **~366 ms delivery stalls explained and mitigated**: a few times per
+  minute the SDK's `CirBuf::ReadBuff` misses a wakeup and sleeps the
+  full `ASIGetVideoData` timeout even though the frame is ready (stall
+  length exactly tracked the timeout). Lowering the server's timeout
+  floor from 350 ms to 50 ms cut stalls to ~65 ms with no change in
+  rate, jitter (0.35 ms rms at 193 Hz), or drops.
 
 ### Server fixes this benchmark motivated (zwoserver.c, 2026-07-08)
 
@@ -192,11 +210,16 @@ Findings (after the 2026-07-08 server fixes, see below):
 - Video thread lifetime serialized across stop/start, SDK buffers
   padded (`SDK_BUF_PAD`), 350 ms settle after `ASIStopVideoCapture`,
   and `Restart=on-failure` in `zwo.service`.
+- `usb` and `highspeed` commands added (`ASI_BANDWIDTHOVERLOAD`,
+  `ASI_HIGH_SPEED_MODE`), and the `ASIGetVideoData` timeout floor
+  lowered 350 ms -> 50 ms (SDK lost-wakeup stalls shrink from ~366 ms
+  to ~65 ms).
 - Validated: 4 consecutive full 96-config sweeps + tiny-ROI set
   (396 configs, ~100 stop/setup/start transitions) with zero failures
   and zero crashes under gdb.
 
 ## TODO
 
-Sweep `ASI_BANDWIDTHOVERLOAD` once `zwoserver.c` exposes a command to
-set it (currently only exposure/gain/offset/cooler are wired).
+Camera-side levers (`ASI_BANDWIDTHOVERLOAD`, `ASI_HIGH_SPEED_MODE`)
+are both tested; no further server-side knobs are known that could
+lift the bin-2 5.15 ms readout floor.

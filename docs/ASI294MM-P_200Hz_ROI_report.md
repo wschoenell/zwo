@@ -1,6 +1,6 @@
 # ZWO ASI294MM Pro at 200 Hz — small-ROI streaming test for fast tip-tilt
 
-**Date:** 2026-07-08
+**Date:** 2026-07-08 (rev. 3: USB-bandwidth sweep, stall fix, high-speed-mode test)
 **Camera:** ZWO ASI294MM Pro (mono, 8288×5644, 12-bit ADC), SDK 1.20.2
 **Server:** `zwoserver` on Raspberry Pi 4 (USB3 to camera), gigabit Ethernet
 **Client:** Raspberry Pi (`zwo-bootsrv`), same gigabit LAN, RTT 0.32 ms
@@ -21,7 +21,10 @@ by the server's sequence counter, so drops are counted exactly.
 
 **Yes at bin 2: a window up to ~200×140 (binned pixels) streams at
 192–194 Hz with zero dropped frames.** Bin 1 tops out at ~105 Hz even
-for an 80×56 window. The limit is camera/USB readout, not the network.
+for an 80×56 window (~+25% with high-speed mode, still well short of
+200 Hz). The limit is camera/USB readout, not the network — and both
+camera-side levers (USB bandwidth, high-speed mode) have been tested
+and do not move the bin 2 ceiling.
 
 ## Measured frame-rate ceilings vs window size
 
@@ -54,16 +57,24 @@ exposure, measured client-side over 20 s (~3900 frames):
 | mean Δt (core) | 5.19 ms → **192.6 Hz** |
 | σ (core) | **0.35 ms** |
 | p95 / p99 / max (core) | 5.5 / 5.6 / 6.3 ms |
-| stalls | **~366 ms, 2–5 per 20 s** (~0.1% of frames) |
+| stalls | **~65 ms, one per 3–10 s** (was ~366 ms before the timeout fix below) |
 
 The core distribution is tight — 0.35 ms rms is small against a 5 ms
-frame period. However, the camera/USB/SDK side occasionally stalls for
-almost exactly 366 ms (a few times per minute; reproduced with all
-instrumentation local to the client, so it is not a network artifact;
-no frames are lost — delivery just pauses). A tip-tilt loop must
-tolerate these ~0.4 s gaps, and they will appear in PSDs as gaps or
-must be masked. Origin not yet identified (SDK-internal; possibly its
-exposure-control thread) — a follow-up item.
+frame period. Frame delivery does stall a few times per minute
+(~0.1–0.3% of frames; no frames are lost, delivery just pauses).
+
+**Stall root cause found and mitigated.** The stall duration always
+equalled the server's `ASIGetVideoData` timeout (350 ms + exposure):
+the SDK's internal circular buffer occasionally misses a wakeup and
+sleeps the *full* timeout even though the frame is already available
+(a lost-wakeup bug in `CirBuf::ReadBuff`, consistent with the gdb
+thread traces). Shrinking the server's timeout floor from 350 ms to
+50 ms cut the stalls from **~366 ms to ~65 ms** with no change in
+rate, jitter, or drops anywhere in the sweep. At 193 Hz a stall now
+costs ~12 frames instead of ~70. The stall *frequency* (one per
+3–10 s) is SDK-internal and unchanged — PSDs still need these short
+gaps masked, and the timeout can be tuned lower if 65 ms is still too
+long.
 
 ## What sets the limits
 
@@ -80,17 +91,55 @@ exposure-control thread) — a follow-up item.
   identical frame rates (the USB link appears to always carry 16-bit
   pixels). 16-bit is fine for centroiding if wanted.
 
-## Headroom / next steps
+## USB bandwidth (`ASI_BANDWIDTHOVERLOAD`) — tested, verdict negative for small ROIs
 
-- **`ASI_BANDWIDTHOVERLOAD` (USB bandwidth %, SDK default 40) is the
-  untested lever.** Raising it should shrink the per-row readout cost
-  and the 5.15 ms floor — likely the path to 200+ Hz at bin 1, and
-  >200 Hz at bin 2. Requires a small server addition (not yet exposed);
-  the benchmark is ready to sweep it.
-- `ASI_HIGH_SPEED_MODE` (10-bit ADC) is a second untested lever, at
-  some cost in bit depth.
+The setting is now exposed as the server's `usb` command
+(`zwo_benchmark --usb N`, 40–100). Sweep at 40 / 60 / 80 / 100 across
+bins 1–2, 8/16-bit, 2–10% windows:
+
+- **No effect on any small-ROI ceiling.** 86.4 / 55.6 / 35.0 Hz (bin 1)
+  and 194 / 193 / 135 Hz (bin 2) are identical to 0.1% at every
+  bandwidth value. The small-window ceilings — including the 5.15 ms
+  bin-2 floor — are **sensor readout timing, not USB transfer**, so
+  bandwidth cannot buy 200 Hz at bin 1.
+- **Large USB-limited frames do speed up**: bin 4 full-frame 16-bit
+  went from 6.8 fps (39 MB/s) at usb=40 to ~10.8 fps (63 MB/s) at
+  usb=100. Useful for full-detector acquisition, irrelevant to the
+  tip-tilt window.
+- Stall frequency and core jitter at the 193 Hz operating point are
+  unchanged by the setting.
+
+## High-speed mode (`ASI_HIGH_SPEED_MODE`, 10-bit ADC) — tested
+
+Exposed as the server's `highspeed` command
+(`zwo_benchmark --highspeed 0/1`). On/off comparison over the same
+matrix:
+
+| config | HSM off | HSM on | change |
+|---|---|---|---|
+| bin 1, 160×112  | 86.4 Hz | 108.2 Hz | **+25%** |
+| bin 1, 408×282  | 55.6 Hz | 69.7 Hz  | **+25%** |
+| bin 1, 824×564  | 35.0 Hz | 43.9 Hz  | **+25%** |
+| bin 2, 80×56    | 194 Hz  | 194 Hz   | none |
+| bin 2, 200×140  | 193 Hz  | 193 Hz   | none |
+| bin 2, 408×282  | 135 Hz  | 135 Hz   | none |
+| bin 4, full     | 13.4 Hz | 13.1 Hz  | none |
+
+- **Bin 1 readout gets uniformly 25% faster** (row time 38 → 30 µs) —
+  but even the smallest window only reaches ~108 Hz, still far from
+  200 Hz, and the ADC drops to 10 bits.
+- **Bin 2 — the tip-tilt operating point — is completely unaffected**,
+  as are bins 4 and both bit depths. The 5.15 ms bin-2 floor stands.
+
+## Remaining headroom
+
+- Both camera-side levers are now exhausted: neither USB bandwidth nor
+  high-speed mode moves the bin-2 floor. **~193 Hz at bin 2 with a
+  ≤200×140 window is the ceiling for this camera + SDK**, and it meets
+  the 200 Hz goal to within 3.5%.
 - The per-frame Δt series (benchmark `--verbose`) gives the timing
   data needed for PSD work directly.
+- The stall-recovery timeout (now 50 ms) can be tuned lower if needed.
 
 ## Server fixes made during this test (already deployed)
 
@@ -106,7 +155,11 @@ on the Raspberry Pi — relevant to anyone reproducing this:
    server segfaulted (confirmed by gdb). Benign on the old x86 host,
    fatal on the Pi. Fixed with proper synchronization and validated
    with 4 consecutive full sweeps (396 configs) with zero crashes.
-4. `Restart=on-failure` added to the systemd unit.
+4. **`usb` and `highspeed` commands added** (`ASI_BANDWIDTHOVERLOAD`
+   40–100, `ASI_HIGH_SPEED_MODE` 0/1).
+5. **`ASIGetVideoData` timeout floor 350 ms → 50 ms**: cuts the
+   SDK lost-wakeup stalls from ~366 ms to ~65 ms.
+6. `Restart=on-failure` added to the systemd unit.
 
 ## Reproducing
 
