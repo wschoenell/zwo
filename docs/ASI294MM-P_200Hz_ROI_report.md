@@ -162,6 +162,35 @@ matrix:
   data needed for PSD work directly.
 - The stall-recovery timeout (now 50 ms) can be tuned lower if needed.
 
+## Cross-camera timestamp validation — to do
+
+The 59 µs jitter above is single-camera *precision*. Using the two
+guiders together for ground-layer PSDs requires their timestamps to be
+mutually *aligned*, which the host-side stamp does not by itself
+guarantee (unknown mode-dependent readout+USB offset; host-clock
+alignment between the two Pis). The literature is unanimous that
+NTP host timestamps cannot be trusted at the ms level without an
+independent optical check — see the plan and precedent (incl.
+proto-Lightspeed on Magellan Clay, ≤30 µs) in
+[two-camera-time-sync-verification.md](two-camera-time-sync-verification.md).
+Open questions to close before trusting cross-camera correlation:
+
+1. Relative timestamp accuracy of the ASI294MM Pro when stamped
+   server-side at USB delivery vs a hardware trigger — no published
+   number exists for this chip.
+2. Rolling-shutter row-dependent exposure offset across the small ROI
+   at 5 ms: fixed per-ROI constant or a row-by-row effect?
+3. Does PTP (vs NTP) between the two Pis actually deliver sub-ms
+   alignment in the field, and validated how? (Pi 4 = software PTP
+   only; CM4/Pi 5 have hardware timestamping.)
+4. Is relative alignment sufficient for the science, or is absolute
+   UTC also required?
+
+Recommended validator: a single GPS-PPS-driven LED imaged
+simultaneously by both cameras, phase-folded on the 1 s edge — cheap,
+measures relative alignment directly, and validates the clock
+discipline end-to-end. Full procedure in the companion doc.
+
 ## Server fixes made during this test (already deployed)
 
 Running at these rates exposed and fixed several issues in `zwoserver`
