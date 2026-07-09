@@ -172,7 +172,7 @@ alignment between the two Pis). The literature is unanimous that
 NTP host timestamps cannot be trusted at the ms level without an
 independent optical check — see the plan and precedent (incl.
 proto-Lightspeed on Magellan Clay, ≤30 µs) in
-[two-camera-time-sync-verification.md](two-camera-time-sync-verification.md).
+[camera-time-sync-verification.md](camera-time-sync-verification.md).
 Open questions to close before trusting cross-camera correlation:
 
 1. Relative timestamp accuracy of the ASI294MM Pro when stamped

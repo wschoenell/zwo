@@ -1,10 +1,12 @@
-# Verifying frame-timestamp synchronization between two ZWO guiders
+# Verifying frame-timestamp synchronization across ZWO guiders
 
 **Date:** 2026-07-09
-**Purpose:** Validate that two ASI294MM Pro guiders (separate Raspberry
-Pi hosts) have frame timestamps aligned to ≲1 ms, so their small-ROI
-193 Hz streams can be cross-correlated for fast tip-tilt / ground-layer
-seeing. Companion to
+**Purpose:** Validate that independently-hosted ASI294MM Pro guiders
+(one Raspberry Pi each) have frame timestamps aligned to ≲1 ms, so
+their small-ROI 193 Hz streams can be cross-correlated for fast
+tip-tilt / ground-layer seeing. Written for the current two-guider
+setup; the method scales to N cameras (e.g. a third on Clay's AUX2).
+Companion to
 [ASI294MM-P_200Hz_ROI_report.md](ASI294MM-P_200Hz_ROI_report.md).
 
 ## Why host timestamps alone are not enough
