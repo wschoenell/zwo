@@ -67,8 +67,21 @@ validates the host-clock discipline (NTP vs PTP) end-to-end.
 
 ### Hardware
 
-- **GPS receiver with 1 PPS output** (e.g. u-blox NEO-M8/M9 breakout,
-  ~$20; or a GPS PCIe/HAT if precise absolute UTC is wanted later).
+**Any cheap GPS module with a PPS pin is sufficient.** The PPS edge of
+even a bargain u-blox receiver is accurate to tens of ns against UTC —
+~10⁵× below our 1 ms goal — so the GPS is never the limiting factor;
+LED rise time and the camera are. Do **not** pay for a timing-grade
+receiver for *this* test (that class matters only for host NTP/PTP
+discipline, a separate purchase — see below). Cost-effective options
+with a broken-out PPS pin (approx. prices, verify at retailer):
+
+| module | chipset | PPS | ~price | notes |
+|---|---|---|---|---|
+| **GT-U7** | u-blox NEO-6M | yes | ~$10 | what the Stamp-of-Approval flasher uses; proven for this exact job |
+| **VK2828U7G5LF** | u-blox G7020 | yes | ~$12 | tiny, ceramic antenna, UART+PPS |
+| BN-220 / BN-880 | u-blox M8 | yes | ~$15–20 | ubiquitous drone module, PPS on a pad |
+| ATGM336H | AT6668 (non-ublox) | yes | ~$6 | multi-GNSS, cheapest; PPS output |
+
 - **LED + driver** switched by the PPS edge. A single logic gate /
   MOSFET is enough; keep LED rise time « target (a plain LED is
   <1 µs, far below our 1 ms goal). Optionally stretch the pulse to a
@@ -76,6 +89,21 @@ validates the host-clock discipline (NTP vs PTP) end-to-end.
 - LED positioned in both cameras' fields (diffuser / shared fiber /
   simply both looking at the same lab wall spot). No optical precision
   needed — only that both see the same on/off transition.
+
+**Strongly consider not building this from scratch:** the occultation
+community's **Stamp of Approval** (ChasinSpin, MIT-licensed open
+hardware) is *exactly* this device — GT-U7 GPS + constant-current LED
+driver, hardware-gated so the GPS→LED delay is ~53 ns, purpose-built
+to test camera frame-timestamp accuracy (validated to ≤0.1 ms at
+30 fps). Either buy/build it as-is, or lift its LED-driver + PPS-gating
+schematic. https://github.com/ChasinSpin/StampOfApproval
+
+*Separate concern — host clock discipline:* for continuously
+disciplining the two Pi clocks (NTP/PTP, the ansible task), a
+timing-grade receiver like the **u-blox NEO-M8T GNSS Timing HAT**
+(~$50) is the right class — it has the single-satellite timing mode
+the navigation modules above lack. That is not needed for the flash
+test but is the module to standardize on for the sync rollout.
 
 ### Capture
 
