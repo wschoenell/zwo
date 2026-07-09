@@ -155,13 +155,37 @@ line; ~10 lines.)*
 2. Rolling-shutter row-dependent exposure offset across the small ROI
    at 5 ms: fixed per-ROI constant, or a row-by-row effect that
    matters for correlation?
-3. Does PTP (vs NTP) between the two Pis actually deliver sub-ms host
+3. Does the chosen clock discipline actually deliver sub-ms host
    alignment in the field? The shared PPS-LED flash is the independent
-   validator. (Note: Pi 4 does software PTP timestamping only; CM4/Pi5
-   have hardware PTP [Geerling 2022].)
+   validator. Preferred discipline is per-host GPS, not PTP — see the
+   clock-architecture section (Pi 4B has no hardware PTP timestamping).
 4. Is relative alignment sufficient for the science, or is absolute
    UTC also needed? The shared LED gives relative directly; absolute
    needs the GPS UTC reference.
+
+## Host clock architecture — per-host GPS beats PTP here
+
+Preferred design: **give each guider Pi its own GPS+PPS discipline**
+(one u-blox NEO-M8T GNSS Timing HAT per host, ~$50, + gpsd + chrony:
+PPS on a GPIO via `dtoverlay=pps-gpio`, NMEA as the coarse anchor).
+This locks each Pi's `CLOCK_REALTIME` — the exact clock zwoserver
+stamps read — to GPS/UTC at ~1 µs. Two (or three) independently
+GPS-locked Stratum-1 clocks are then mutually aligned to ~µs **with no
+PTP or NTP between the hosts at all**, which is cleaner than a
+grandmaster/client link and scales identically to the AUX2 camera.
+The same HAT's PPS also drives the flash-test LED, so one part serves
+both roles.
+
+Why not PTP-between-hosts: the **Raspberry Pi 4 Model B NIC
+(BCM54213PE) has no hardware timestamping**, so a Pi 4 can only run
+`ptp4l` in software-timestamping mode (tens of µs, jittery) — worse
+than per-host GPS. Hardware PTP grandmaster capability (a disciplinable
+PHC with a PPS-sync pin) exists only on the **CM4** (BCM54210PE) and
+**Pi 5** [Geerling 2022; jclark rpi-cm4-ptp-guide]. Confirm each host
+with `ethtool -T eth0` (look for `hardware-transmit`/`hardware-receive`)
+and `cat /proc/device-tree/model`. Only if the hosts are CM4/Pi 5 is
+hardware PTP worth considering over per-host GPS — and even then, with
+per-host GPS the cameras are already aligned, so PTP buys little.
 
 ## Relation to other work
 
@@ -180,3 +204,5 @@ line; ~10 lines.)*
   (arXiv:2601.16268)
 - Basden et al. 2016 — CANARY/DRAGON WFS sync (arXiv:1603.07527)
 - Kulcsár et al. 2018, SPIE 10703 — WFS camera latency measurement
+- Geerling 2022 — PTP hardware timestamping on the Pi CM4 (jeffgeerling.com)
+- jclark, rpi-cm4-ptp-guide — CM4/CM5 hardware PTP + PPS-disciplined PHC
