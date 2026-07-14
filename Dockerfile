@@ -11,10 +11,10 @@ RUN apt-get install -y libusb-1.0-0-dev
 COPY . /app/zwo
 
 ## ASI SDK
-RUN cd /app/zwo/docs/ZWO/Setup/ && tar jxvf ASI_linux_mac_SDK_V1.20.2.tar.bz2 && cd ASI_linux_mac_SDK_V1.20.2/lib 
-RUN cp /app/zwo/docs/ZWO/Setup/ASI_linux_mac_SDK_V1.20.2/lib/armv8/libASICamera2.so.1.20.2 /usr/local/lib
-RUN cd /app/zwo/docs/ZWO/Setup/ASI_linux_mac_SDK_V1.20.2/lib/ && install asi.rules /lib/udev/rules.d
-RUN cd /usr/local/lib && ln -s libASICamera2.so.1.20.2 libASICamera2.so
+RUN cd /app/zwo/docs/ZWO/Setup/ && tar jxvf ASI_linux_mac_SDK_V1.41.tar.bz2 && cd ASI_linux_mac_SDK_V1.41/lib
+RUN cp /app/zwo/docs/ZWO/Setup/ASI_linux_mac_SDK_V1.41/lib/armv8/libASICamera2.so.1.41 /usr/local/lib
+RUN cd /app/zwo/docs/ZWO/Setup/ASI_linux_mac_SDK_V1.41/lib/ && install asi.rules /lib/udev/rules.d
+RUN cd /usr/local/lib && ln -s libASICamera2.so.1.41 libASICamera2.so
 ## EFW SDK
 RUN cd /app/zwo/docs/ZWO/Setup/ && tar jxvf EFW_linux_mac_SDK_V1.7.tar.bz2 && cd EFW_linux_mac_SDK_V1.7/lib
 RUN cp /app/zwo/docs/ZWO/Setup/EFW_linux_mac_SDK_V1.7/lib/armv8/libEFWFilter.so.1.7 /usr/local/lib

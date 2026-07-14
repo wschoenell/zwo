@@ -112,13 +112,16 @@ static float asi_temperature,asi_target,asi_cooler_power;
 
 static const int efw_id=0;
 
-enum server_errors_enum { E_first=ASI_ERROR_END+1,
-                          E_no_camera,
+/* fixed base (was ASI_ERROR_END+1): SDK 1.41 added GPS error codes,
+ * shifting ASI_ERROR_END 18->23; clients (gcam/zwotcp.h, ZwoGUI,
+ * zwo_emulator.py) expect 20..25 on the wire */
+enum server_errors_enum { E_first=19,
+                          E_no_camera, /* 20 */
                           E_not_open,
                           E_not_idle,  /* 22 */
                           E_no_data,
 			  E_not_video,
-                          E_unknown,
+                          E_unknown,   /* 25 */
                           E_last };
 
 enum server_states_enum  { ZWO_CLOSED,
