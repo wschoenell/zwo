@@ -73,6 +73,7 @@ ZwoStruct* zwo_create(const char* host,int port)
   self->seqNumber = 0;
   for (i=0; i<ZWO_NBUFS; i++) {
     ZwoFrame *frame = &self->frames[i];
+    frame->ts_ns = 0;
     frame->data = NULL;
   }
   self->tid = 0;
@@ -362,6 +363,7 @@ static void* run_cycle(void* param)
   ZwoStruct *self=(ZwoStruct*)param;
   int     i,n=0,err=0,per,last_err=0;
   u_int   seq=0;
+  unsigned long long ts=0;             /* frame timestamp [ns] v1.0.6 */
   double  t1,t2,tmp=0;
   char    cmd[128],buf[256];
   u_short *roll_buf=NULL;
@@ -406,8 +408,9 @@ static void* run_cycle(void* param)
       }
       msleep(350);
     } else {                           /* regular response */
-      n = sscanf(buf,"%u %lf %d",&seq,&tmp,&per);
-      if (n != 3) fprintf(stderr,"bad line '%s'\n",buf);
+      ts = 0;                          /* servers before v1.0.5 omit it */
+      n = sscanf(buf,"%u %lf %d %llu",&seq,&tmp,&per,&ts);
+      if (n < 3) fprintf(stderr,"bad line '%s'\n",buf);
       self->tempSensor = (float)tmp;
       self->coolerPercent = (float)per;
       for (i=0,n=0; i<nbytes/42; i++) { /* transfer image data */
@@ -497,6 +500,7 @@ static void* run_cycle(void* param)
         ZwoFrame *frame = zwo_frame4writing(self,seq);
         if (frame) {
           frame->seqNumber = seq;
+          frame->ts_ns = ts;           /* newest contributing frame v1.0.6 */
           register u_short *d=(u_short*)data;
           if (self->rolling == 0) {    /* rolling average */
             register u_short *p=frame->data;
@@ -594,6 +598,7 @@ int zwo_cycle_start(ZwoStruct* self)
     for (i=0; i<ZWO_NBUFS; i++) {
       ZwoFrame *frame = &self->frames[i];    
       frame->seqNumber = 0;
+      frame->ts_ns = 0;
       assert(!frame->data);
       frame->data = (u_short*)malloc(size);
       assert(((u_long)frame->data & 0x07) == 0);

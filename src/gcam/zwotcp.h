@@ -23,6 +23,7 @@ enum zwo_errors_enum { E_zwo_error = 1+ASI_ERROR_END,
 
 typedef struct zwo_frame_tag {
   u_int seqNumber;
+  unsigned long long ts_ns;  /* server-side receive time [ns], 0=unknown */
   u_short *data;
   int w,h;
   volatile int wlock,rlock;
