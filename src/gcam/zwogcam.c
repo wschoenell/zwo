@@ -139,6 +139,7 @@
 #define DEF_FONT        "lucidatypewriter"
 
 #define TCPIP_PORT      (50000+(100*PROJECT_ID))
+#define IMAGE_PORT      (TCPIP_PORT+100)   /* image server v1.0.6 */
 
 #define PREFUN          __func__
 
@@ -249,6 +250,13 @@ static void    set_gm            (Guider*,int,char);
 static int     do_start          (Guider*,int);
 static int     do_stop           (Guider*,int);
 
+static void    guider_state      (Guider*,GuiderState*);
+static void    update_status     (FITSpars*,Guider*,ZwoFrame*);
+static void    update_tcs        (FITSpars*);
+static void*   run_image_server  (void*);              /* v1.0.6 */
+static int     receive_string    (int,char*,size_t);
+static void    push_frame        (Guider*,ZwoFrame*);  /* legacy push */
+
 static int     handle_command    (Guider*,const char*,int);
 static int     handle_key        (void*,XEvent*); 
 static int     handle_msmode     (void*,XEvent*);
@@ -322,6 +330,7 @@ int main(int argc,char **argv)
     .span = 0,
     .send_host = "localhost",
     .send_port = 0,
+    .image_port = IMAGE_PORT,          /* v1.0.6 */
     .host = "localhost",
     .rPort = 0,
     .sens = 0.5f,
@@ -465,7 +474,8 @@ int main(int argc,char **argv)
     g->server->expTime = g->status.exptime;
     g->gid = 0;                        /* guiding thread ID */
     g->qltool = NULL;
-    g->loop_running = g->house_running = g->tcpip_running = False; 
+    g->loop_running = g->house_running = g->tcpip_running = False;
+    g->image_running = False; g->image_clients = 0;   /* v1.0.6 */
     g->stop_flag = False;
     g->init_flag = g->send_flag = g->write_flag = 0;
     pthread_mutex_init(&g->mutex,NULL);
@@ -1625,33 +1635,22 @@ static int handle_command(Guider* g,const char* command,int showMsg)
 #endif
   } else 
   if (!strcasecmp(cmd,"status")) {     /* report guider state */
-    QlTool *q = g->qltool;
-    double fps,flux,ppix,back,fwhm,dx,dy,azg,elg;
-    float  gx,gy;
-    int    guiding;
-    pthread_mutex_lock(&g->mutex);     /* latch -- do not clear update_flag */
-    fps  = g->fps;  flux = g->flux; ppix = g->ppix;
-    back = g->back; fwhm = g->fwhm;
-    dx   = g->dx;   dy   = g->dy;      /* relative to the guide box */
-    azg  = g->azg;  elg  = g->elg;
-    guiding = q->guiding;              /* also set under 'mutex' */
-    gx = q->curx[QLT_BOX];             /* box follows the star in gm4/gm5 */
-    gy = q->cury[QLT_BOX];
-    pthread_mutex_unlock(&g->mutex);
+    GuiderState s;
+    guider_state(g,&s);                /* shared with the FITS header */
     snprintf(msgstr,sizeof(g->command_msg),
       "init=%d loop=%d guiding=%d gm=%d fm=%d mm=%d "
       "exptime=%.3f av=%d gain=%d offset=%d send=%d "
       "temp=%.1f setp=%.0f cooler=%.0f cfps=%.2f gfps=%.2f "
       "fwhm=%.2f flux=%.0f peak=%.0f back=%.0f dx=%+.2f dy=%+.2f "
-      "az=%+.3f el=%+.3f x=%.1f y=%.1f bx=%d px=%.0f pa=%.1f sn=%.1f",
-      g->init_flag,(int)g->loop_running,guiding,g->gmode,g->fmode,g->msmode,
-      g->status.exptime,g->server->rolling,g->server->gain,g->server->offset,
-      g->send_flag,
-      g->server->tempSensor,g->server->tempSetpoint,g->server->coolerPercent,
-      g->server->fps,fps,
-      fwhm,flux,ppix,back,dx,dy,
-      azg,elg,gx,gy,1+2*q->vrad,
-      1000.0*g->px,g->pa,g->sens);
+      "az=%+.3f el=%+.3f x=%.1f y=%.1f bx=%d px=%.0f pa=%.1f sn=%.1f "
+      "iport=%d iclients=%d",
+      s.init,s.loop,s.guiding,s.mode,s.fmode,s.mmode,
+      g->status.exptime,s.av,g->server->gain,s.offset,s.send,
+      g->server->tempSensor,s.setp,s.cooler,s.camfps,s.fps,
+      s.fwhm,s.flux,s.peak,s.back,s.dx,s.dy,
+      s.az,s.el,s.boxx,s.boxy,s.boxsz,
+      1000.0*g->px,s.pa,s.sens,
+      g->image_port,g->image_clients);
   } else
   if (!strncasecmp(cmd,"start",4)) {   /* start exposure loop */
     int r = do_start(g,0);
@@ -1887,6 +1886,9 @@ static void* run_init(void* param)
     if (!g->tcpip_running) {           /* NEW v0424 */
       thread_detach(run_tcpip,(void*)g);
     }
+    if ((g->image_port > 0) && !g->image_running) {  /* v1.0.6 */
+      thread_detach(run_image_server,(void*)g);
+    }
   }
   g->init_flag = (err) ? 0 : 1;
 
@@ -1971,9 +1973,92 @@ static void* run_housekeeping(void* param)
 
 /* ---------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------- */
+
+/* --- legacy push, scheduled for removal ---------------------------- *
+ *                                                                     *
+ * Pushes one FITS to send_host:send_port, one connection per frame.   *
+ * Superseded by the image server; kept until the last consumer moves. *
+ * Removal checklist: docs/plans/gcam-image-server.md                  *
+ *                                                                     *
+ * NOTE: runs on the acquisition thread and is called while the caller *
+ * still holds the frame's read-lock, so an unreachable send_host can  *
+ * stall acquisition. Not worth fixing in code that is being deleted;  *
+ * see the plan for the reasoning.                                     */
+
+static void push_frame(Guider* g,ZwoFrame* frame)
+{
+  int  err=0;
+  char buf[128];
+
+  update_status(&g->status,g,frame);
+  if (g->send_port > 0) {
+    int sock = TCPIP_CreateClientSocket(g->send_host,g->send_port,&err);
+    if (!err) {
+      err = fits_send(frame->data,&g->status,sock); /* network */
+      (void)close(sock);
+    }
+  }
+  printf("%s: sending frame %u to %s:%d, err=%d\n",
+         get_ut_timestr(buf,cor_time(0)),g->sendNumber,
+         g->send_host,g->send_port,err);
+  sprintf(g->sqbox.text,"%u",g->sendNumber); /* v0343 */
+  CBX_UpdateEditWindow(&g->sqbox);
+  if (!err) g->sendNumber += 1;        // TODO ?Polivas overflow
+  if (g->send_flag < 0) set_sf(g,0);   /* single send */
+}
+
+/* --- end legacy push ----------------------------------------------- */
+
+/* ---------------------------------------------------------------- */
+
+/* Latch the guider state. Single source of truth for the 'status'    */
+/* command and the FITS header, so the two cannot drift apart. v1.0.6 */
+/* Fills a caller-owned struct -- never shared state -- so concurrent */
+/* readers (command port, image server) do not stomp each other.      */
+
+static void guider_state(Guider* g,GuiderState* s)
+{
+  QlTool *q = g->qltool;
+
+  pthread_mutex_lock(&g->mutex);       /* latch -- do not clear update_flag */
+  s->fps     = (float)g->fps;
+  s->flux    = (float)g->flux;
+  s->peak    = (float)g->ppix;
+  s->back    = (float)g->back;
+  s->fwhm    = (float)g->fwhm;
+  s->dx      = (float)g->dx;           /* relative to the guide box */
+  s->dy      = (float)g->dy;
+  s->az      = (float)g->azg;
+  s->el      = (float)g->elg;
+  s->guiding = q->guiding;             /* also set under 'mutex' */
+  s->boxx    = q->curx[QLT_BOX];       /* box follows the star in gm4/gm5 */
+  s->boxy    = q->cury[QLT_BOX];
+  pthread_mutex_unlock(&g->mutex);
+
+  s->init   = g->init_flag;            /* not written under 'mutex' */
+  s->loop   = (int)g->loop_running;
+  s->mode   = g->gmode;
+  s->fmode  = g->fmode;
+  s->mmode  = g->msmode;
+  s->av     = g->server->rolling;
+  s->offset = g->server->offset;
+  s->send   = g->send_flag;
+  s->boxsz  = 1+2*q->vrad;
+  s->setp   = g->server->tempSetpoint;
+  s->cooler = g->server->coolerPercent;
+  s->camfps = (float)g->server->fps;
+  s->pa     = (float)g->pa;
+  s->sens   = (float)g->sens;
+}
+
+/* ---------------------------------------------------------------- */
+
 static void update_status(FITSpars* st,Guider* g,ZwoFrame* f) /* v0317 */
 {
-  st->seqNumber = f->seqNumber;   
+  guider_state(g,&st->gd);             /* guider block v1.0.6 */
+  st->ts_ns = f->ts_ns;                /* server frame time v1.0.6 */
+  st->seqNumber = f->seqNumber;
   st->stop_int  = walltime(0);
   st->start_int = st->stop_int - st->exptime;
   st->temp_ccd = g->server->tempSensor;   /* v0313 */
@@ -1982,6 +2067,17 @@ static void update_status(FITSpars* st,Guider* g,ZwoFrame* f) /* v0317 */
   st->frame = g->sendNumber;              /* v0317 */
   st->ca = modulo(g->angle+180.0,0,360);  /* v0430 */
 
+  update_tcs(st);
+}
+
+/* ---------------------------------------------------------------- */
+
+/* The TCS block. Blocking network I/O -- one 'telio' connection and  */
+/* eight-plus queries -- so it must never run per client per frame;   */
+/* the image server refreshes it on a timer instead. v1.0.6           */
+
+static void update_tcs(FITSpars* st)
+{
   int err = telio_open(2);   /* update status from TCS v0328 */
   if (!err) { char  buf[128];
     if (!err) err = telio_pos(&st->alpha,&st->delta,&st->equinox);
@@ -2063,24 +2159,12 @@ static void* run_cycle(void* param)
       frame = zwo_frame4reading(server,seqNumber);
       if (frame) {                     /* a new frame has arrived */
         seqNumber = frame->seqNumber;  /* most recent frame */
-        if ((g->send_flag) && (cnt <= 0.0)) { /* send frame */
-          update_status(&g->status,g,frame);
-          if (g->send_port > 0) {
-            int sock = TCPIP_CreateClientSocket(g->send_host,g->send_port,&err);
-            if (!err) {
-              err = fits_send(frame->data,&g->status,sock); /* network */
-              (void)close(sock);
-            }
-          }
-          printf("%s: sending frame %u to %s:%d, err=%d\n",
-                 get_ut_timestr(buf,cor_time(0)),g->sendNumber,
-                 g->send_host,g->send_port,err);
-          sprintf(g->sqbox.text,"%u",g->sendNumber); /* v0343 */
-          CBX_UpdateEditWindow(&g->sqbox);
-          if (!err) g->sendNumber += 1;  // TODO ?Polivas overflow
-          if (g->send_flag < 0) set_sf(g,0); /* single send */
+        /* --- legacy push, scheduled for removal v1.0.6 --------------- */
+        if ((g->send_flag) && (cnt <= 0.0)) {
+          push_frame(g,frame);
           tSend = tNow-0.175;          /* time of last send */
-        } /* endif(send) */
+        }
+        /* --- end legacy push ---------------------------------------- */
         zwo_frame_release(server,frame);
         update_fps(&g->fpbox,g->server->fps);
         tFrame = tNow-0.175;           /* time of last frame */
@@ -2792,7 +2876,8 @@ static int read_inifile(Guider *g,const char* name) /* v0415 */
       if      (!strcmp(key,"host")) strcpy(g->host,val);
       else if (!strcmp(key,"port")) g->rPort = atoi(val); 
       else if (!strcmp(key,"send_host")) strcpy(g->send_host,val);
-      else if (!strcmp(key,"send_port")) g->send_port = atoi(val); 
+      else if (!strcmp(key,"send_port")) g->send_port = atoi(val);
+      else if (!strcmp(key,"image_port")) g->image_port = atoi(val); /* v1.0.6 */ 
       else if (!strcmp(key,"gain")) strcpy(g->gain,val);
       else if (!strcmp(key,"mode")) setup_m_switch(val[0]);
       else if (!strcmp(key,"gnum")) g->gnum = atoi(val);
@@ -2928,6 +3013,183 @@ static void* run_tcpip(void* param)
 #if (DEBUG > 0)
   fprintf(stderr,"%s(%d) done\n",PREFUN,port);
 #endif
+
+  return (void*)0;
+}
+
+/* ---------------------------------------------------------------- */
+/* image server (v1.0.6) -- docs/plans/gcam-image-server.md           */
+/* ---------------------------------------------------------------- */
+
+/* One verb:                                                          */
+/*   fits [timeout] -> "<seq> <ts_ns> <nbytes>\n" + nbytes of FITS    */
+/* 'timeout' waits that many seconds for a frame newer than the last  */
+/* served on this connection; 0 (default) returns the newest frame    */
+/* available immediately. Nothing new -> "-Enodata".                  */
+
+#define IMAGE_MAXCLIENTS  4
+#define IMAGE_TCSAGE      30.0         /* [s] TCS cache lifetime */
+
+static pthread_mutex_t tcsLock=PTHREAD_MUTEX_INITIALIZER;
+static double          tcs_last=0.0;
+static pthread_mutex_t imgLock=PTHREAD_MUTEX_INITIALIZER;
+
+/* --- */
+
+static void image_clients(Guider* g,int d)   /* +1 / -1 */
+{
+  pthread_mutex_lock(&imgLock);
+  g->image_clients += d;
+  pthread_mutex_unlock(&imgLock);
+}
+
+/* --- */
+
+/* Refresh the shared TCS block at most every IMAGE_TCSAGE seconds,   */
+/* however many clients are connected. Must be called with no frame   */
+/* read-lock held -- it does blocking network I/O.                    */
+
+static void tcs_cache(Guider* g)
+{
+  pthread_mutex_lock(&tcsLock);
+  if ((walltime(0)-tcs_last) >= IMAGE_TCSAGE) {
+    update_tcs(&g->status);
+    tcs_last = walltime(0);
+  }
+  pthread_mutex_unlock(&tcsLock);
+}
+
+/* --- */
+
+static void* run_image_conn(void* param)
+{
+  Guider    *g = ((Guider**)param)[0];
+  int       sock = (int)(long)((void**)param)[1];
+  ZwoStruct *server = g->server;
+  u_short   *pix=NULL;
+  size_t    pixsize=0;
+  u_int     last_seq=0;
+  int       rval;
+  char      cmd[128],verb[64],par[64],line[128];
+
+  free(param);
+
+  do {
+    rval = receive_string(sock,cmd,sizeof(cmd));
+    if (rval <= 0) break;
+    *verb = *par = '\0';
+    (void)sscanf(cmd,"%s %s",verb,par);
+
+    if (strcasecmp(verb,"fits")) {     /* the only verb */
+      TCPIP_Send(sock,"-Einvalid command\n");
+      continue;
+    }
+    if (g->init_flag != 1) { TCPIP_Send(sock,"-EZWO not initialized\n"); continue; }
+    if (!g->loop_running) { TCPIP_Send(sock,"-EZWO not acquiring\n");   continue; }
+
+    double timeout = (*par) ? atof(par) : 0.0;
+    double deadline = walltime(0) + timeout;
+    ZwoFrame *frame = NULL;
+    do {                               /* wait for a frame we have not served */
+      frame = zwo_frame4reading(server,last_seq);
+      if (frame || (walltime(0) >= deadline)) break;
+      msleep(5);
+    } while (!done && !g->stop_flag);
+    if (!frame && (timeout <= 0.0)) {  /* newest, even if already served */
+      frame = zwo_frame4reading(server,0);
+    }
+    if (!frame) { TCPIP_Send(sock,"-Enodata\n"); continue; }
+
+    /* Copy out and release BEFORE any network I/O -- holding the     */
+    /* read-lock across a socket write can starve zwo_frame4writing() */
+    /* and kill acquisition. Nothing below touches 'frame'.           */
+    int    fw = frame->w, fh = frame->h;
+    u_int  fseq = frame->seqNumber;
+    unsigned long long fts = frame->ts_ns;
+    size_t nbytes = (size_t)fw * fh * sizeof(u_short);
+    if (pixsize != nbytes) {
+      pix = (u_short*)realloc(pix,nbytes);
+      pixsize = (pix) ? nbytes : 0;
+    }
+    if (pix) memcpy(pix,frame->data,nbytes);
+    last_seq = fseq;
+    zwo_frame_release(server,frame);   /* released -- socket work is next */
+    frame = NULL;
+
+    if (!pix) { TCPIP_Send(sock,"-Eout of memory\n"); continue; }
+
+    tcs_cache(g);                      /* blocking I/O, no lock held */
+
+    FITSpars st = g->status;           /* config + cached TCS block */
+    st.dimx = fw;
+    st.dimy = fh;
+    st.seqNumber = fseq;
+    st.ts_ns = fts;
+    guider_state(g,&st.gd);            /* shared with the 'status' command */
+    st.gain = g->server->gain;
+    st.temp_ccd = g->server->tempSensor;
+    st.stop_int = walltime(0);
+    st.start_int = st.stop_int - st.exptime;
+
+    int nb = FITSLEN + (int)nbytes;    /* FITS is block-padded */
+    nb += (FITSBLOCK - (nb % FITSBLOCK)) % FITSBLOCK;
+    sprintf(line,"%u %llu %d\n",st.seqNumber,st.ts_ns,nb);
+    if (TCPIP_Send(sock,line)) break;
+    if (fits_send(pix,&st,sock)) break;
+  } while (!done);
+
+  if (pix) free((void*)pix);
+  (void)close(sock);
+  image_clients(g,-1);
+
+  return (void*)0;
+}
+
+/* --- */
+
+static void* run_image_server(void* param)
+{
+  Guider *g = (Guider*)param;
+  int    port = g->image_port + g->gnum;
+  int    err,msgsock;
+  char   buf[128];
+  IP_Address ip;
+
+  int sock = TCPIP_CreateServerSocket(port,&err);
+  if (err) {
+    sprintf(buf,"image server failed, err=%d",err);
+    message(g,buf,MSS_WARN);
+    return (void*)(long)err;
+  }
+  sprintf(buf,"image server listening (%s,%d)",g->name,port);
+  message(g,buf,MSS_FLUSH);
+
+  g->image_running = True;
+  while (!done) {
+    msgsock = TCPIP_ServerAccept(sock,&ip);
+    if (msgsock < 0) continue;
+#ifdef SO_NOSIGPIPE                    /* 2017-07-05 */
+    int on=1; (void)setsockopt(msgsock,SOL_SOCKET,SO_NOSIGPIPE,&on,sizeof(on));
+#endif
+    if (g->image_clients >= IMAGE_MAXCLIENTS) {
+      sprintf(buf,"image server busy (%d clients)",g->image_clients);
+      message(g,buf,MSS_WARN);
+      (void)TCPIP_Send(msgsock,"-Etoo many clients\n");
+      (void)close(msgsock);
+      continue;
+    }
+    sprintf(buf,"image client %u.%u.%u.%u",
+            ip.byte1,ip.byte2,ip.byte3,ip.byte4);
+    message(g,buf,MSS_FLUSH);
+    void **arg = (void**)malloc(2*sizeof(void*));
+    arg[0] = (void*)g;
+    arg[1] = (void*)(long)msgsock;
+    image_clients(g,+1);            /* counted before the thread starts */
+    thread_detach(run_image_conn,(void*)arg);
+  } /* while(!done) */
+  g->image_running = False;
+
+  (void)close(sock);
 
   return (void*)0;
 }

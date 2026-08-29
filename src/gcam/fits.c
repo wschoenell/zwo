@@ -136,8 +136,21 @@ static char* fitsf(char **line,int id,float value,int dp,const char *comment)
 static char* fitsi(char **line,int id,int value,const char *comment)
 {
   char number[32];
- 
+
   sprintf(number,"%d",value);          /* create number string */
+  fitsg(line,id,number,comment);
+
+  return(line[id]);
+}
+
+/* ---------------------------------------------------------------- */
+
+static char* fitsll(char **line,int id,unsigned long long value,
+                    const char *comment)         /* 64-bit v1.0.6 */
+{
+  char number[32];
+
+  sprintf(number,"%llu",value);        /* ns timestamps exceed 'int' */
   fitsg(line,id,number,comment);
 
   return(line[id]);
@@ -276,6 +289,35 @@ char** fits_setup(char** fits,FITSpars* st)
   fitsi(fits,F_FRAME,st->frame,"send frame number");
   fitsi(fits,F_ROTN,st->rotn,"rotator port");
   fitsi(fits,F_GAIN,st->gain,"gain");
+
+  /* guider state -- mirrors the 'status' command v1.0.6 */
+  fitsi(fits,F_GDINIT,st->gd.init,"camera initialized");
+  fitsi(fits,F_GDLOOP,st->gd.loop,"acquisition loop running");
+  fitsi(fits,F_GDGUIDE,st->gd.guiding,"0=off, 2..5=mode, <0=first pass");
+  fitsi(fits,F_GDMODE,st->gd.mode,"$(gm #) guide mode");
+  fitsi(fits,F_GDFMODE,st->gd.fmode,"$(fm #) function mode");
+  fitsi(fits,F_GDMMODE,st->gd.mmode,"$(mm #) mouse mode");
+  fitsi(fits,F_GDAVG,st->gd.av,"$(av #) frames in rolling average");
+  fitsi(fits,F_CCDOFFS,st->gd.offset,"CCD offset");
+  fitsi(fits,F_GDSEND,st->gd.send,"$(send #) send flag");
+  fitsf(fits,F_TEMPSET,st->gd.setp,1,"cooler setpoint [C]");
+  fitsf(fits,F_COOLER,st->gd.cooler,0,"cooler power [%]");
+  fitsf(fits,F_CAMFPS,st->gd.camfps,2,"camera frame rate");
+  fitsf(fits,F_GDFPS,st->gd.fps,2,"guider loop rate");
+  fitsf(fits,F_GDFWHM,st->gd.fwhm,2,"FWHM [pixels]");
+  fitsf(fits,F_GDFLUX,st->gd.flux,0,"total counts");
+  fitsf(fits,F_GDPEAK,st->gd.peak,0,"peak pixel");
+  fitsf(fits,F_GDBACK,st->gd.back,0,"background");
+  fitsf(fits,F_GDDX,st->gd.dx,2,"centroid offset x [pixels]");
+  fitsf(fits,F_GDDY,st->gd.dy,2,"centroid offset y [pixels]");
+  fitsf(fits,F_GDAZ,st->gd.az,3,"last az correction [arcsec]");
+  fitsf(fits,F_GDEL,st->gd.el,3,"last el correction [arcsec]");
+  fitsf(fits,F_GDBOXX,st->gd.boxx,1,"guide box center x [pixels]");
+  fitsf(fits,F_GDBOXY,st->gd.boxy,1,"guide box center y [pixels]");
+  fitsi(fits,F_GDBOXSZ,st->gd.boxsz,"$(bx #) guide box size [pixels]");
+  fitsf(fits,F_GDPA,st->gd.pa,1,"position angle [deg]");
+  fitsf(fits,F_GDSENS,st->gd.sens,1,"$(sn #) guider sensitivity");
+  fitsll(fits,F_FRAMETS,st->ts_ns,"server frame time [ns], 0=unknown");
 
   fitss(fits,F_COMMENT,"","no comment");
 

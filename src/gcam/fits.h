@@ -23,7 +23,7 @@
 
 #define FITSRECORD    80                      /* FITS record length */
 #define FITSBLOCK     (36*FITSRECORD)         /* FITS block length */
-#define FITSNBLKS     2                       /* # of FITS blocks */
+#define FITSNBLKS     3                       /* # of FITS blocks v1.0.6 */
 #define FITSLINES     (FITSNBLKS*36)          /* # of header-lines */
 #define FITSLEN       (FITSLINES*FITSRECORD)  /* length of FITS-header */
 
@@ -44,6 +44,19 @@ typedef struct fitskey_tag {
   char* keyword;
 } FITSKey;
 
+/* guider state, filled by guider_state() -- single source of truth for  */
+/* both the 'status' command and the FITS header v1.0.6                  */
+
+typedef struct guider_state_tag {
+  int    init,loop,guiding;            /* latched under Guider.mutex */
+  int    mode,fmode,mmode;
+  int    av,offset,send,boxsz;
+  float  setp,cooler,camfps,fps;
+  float  fwhm,flux,peak,back;
+  float  dx,dy,az,el;                  /* dx,dy relative to the guide box */
+  float  boxx,boxy,pa,sens;
+} GuiderState;
+
 typedef struct system_parameters_tag { // IDEA combine with Guider struct
   /* camera */
   char   instrument[64],serial[32];
@@ -63,6 +76,8 @@ typedef struct system_parameters_tag { // IDEA combine with Guider struct
   float  temp_ccd;
   char   origin[64];
   int    gain;
+  GuiderState gd;                      /* guider state v1.0.6 */
+  unsigned long long ts_ns;            /* frame timestamp [ns], 0=unknown */
   /* telescope stuff v0328*/
   double alpha,delta,equinox;
   float  telfocus,zd,airmass;
@@ -117,6 +132,18 @@ enum fits_headers {
   F_FRAME,                   /* v0317 */
   F_ROTN,                    /* v0317 */
   F_GAIN,
+
+  /* guider state -- mirrors the 'status' command v1.0.6 */
+  F_GDINIT,F_GDLOOP,F_GDGUIDE,
+  F_GDMODE,F_GDFMODE,F_GDMMODE,
+  F_GDAVG,F_CCDOFFS,F_GDSEND,
+  F_TEMPSET,F_COOLER,
+  F_CAMFPS,F_GDFPS,
+  F_GDFWHM,F_GDFLUX,F_GDPEAK,F_GDBACK,
+  F_GDDX,F_GDDY,F_GDAZ,F_GDEL,
+  F_GDBOXX,F_GDBOXY,F_GDBOXSZ,
+  F_GDPA,F_GDSENS,
+  F_FRAMETS,
 
   F_COMMENT,
 
@@ -182,6 +209,34 @@ static FITSKey fitskeys[] = {
   { F_FRAME,     "FRAME" },
   { F_ROTN,      "ROTATORN" },
   { F_GAIN,      "GAIN" },
+
+  { F_GDINIT,    "GDINIT" },           /* guider state v1.0.6 */
+  { F_GDLOOP,    "GDLOOP" },
+  { F_GDGUIDE,   "GDGUIDE" },
+  { F_GDMODE,    "GDMODE" },
+  { F_GDFMODE,   "GDFMODE" },
+  { F_GDMMODE,   "GDMMODE" },
+  { F_GDAVG,     "GDAVG" },
+  { F_CCDOFFS,   "CCDOFFS" },
+  { F_GDSEND,    "GDSEND" },
+  { F_TEMPSET,   "TEMPSET" },
+  { F_COOLER,    "COOLER" },
+  { F_CAMFPS,    "CAMFPS" },
+  { F_GDFPS,     "GDFPS" },
+  { F_GDFWHM,    "GDFWHM" },
+  { F_GDFLUX,    "GDFLUX" },
+  { F_GDPEAK,    "GDPEAK" },
+  { F_GDBACK,    "GDBACK" },
+  { F_GDDX,      "GDDX" },
+  { F_GDDY,      "GDDY" },
+  { F_GDAZ,      "GDAZ" },
+  { F_GDEL,      "GDEL" },
+  { F_GDBOXX,    "GDBOXX" },
+  { F_GDBOXY,    "GDBOXY" },
+  { F_GDBOXSZ,   "GDBOXSZ" },
+  { F_GDPA,      "GDPA" },
+  { F_GDSENS,    "GDSENS" },
+  { F_FRAMETS,   "FRAMETS" },
 
   { F_COMMENT,   "COMMENT" },
 

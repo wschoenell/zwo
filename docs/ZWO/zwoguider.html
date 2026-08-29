@@ -757,7 +757,8 @@ xterm&gt; nc localhost 52201
 <tt>init=1 loop=1 guiding=3 gm=1 fm=1 mm=1 exptime=0.100 av=0 gain=300
 offset=50 send=0 temp=-15.0 setp=-15 cooler=42 cfps=9.98 gfps=9.87
 fwhm=1.23 flux=123456 peak=45678 back=1234 dx=+0.12 dy=-0.34 az=+0.051
-el=-0.024 x=256.0 y=256.0 bx=15 px=196 pa=45.0 sn=1.0</tt> </dd>
+el=-0.024 x=256.0 y=256.0 bx=15 px=196 pa=45.0 sn=1.0
+iport=52300 iclients=0</tt> </dd>
 <dd><tt>init</tt>: camera initialized (0/1) &ndash;
 <tt>loop</tt>: acquisition loop running (0/1) &ndash;
 <tt>guiding</tt>: 0=off, 2..5 = active mode (&lt;F2&gt;..&lt;F5&gt;),
@@ -773,12 +774,74 @@ housekeeping thread (stale if the cooler is off) &ndash;
 <tt>az</tt>/<tt>el</tt>: last guider correction [arcsec] &ndash;
 <tt>x</tt>/<tt>y</tt>: guide box center [pixels], <tt>bx</tt>: box size &ndash;
 <tt>px</tt>: pixel scale [mas] &ndash; <tt>pa</tt>: position angle &ndash;
-<tt>sn</tt>: sensitivity. </dd>
+<tt>sn</tt>: sensitivity &ndash;
+<tt>iport</tt>/<tt>iclients</tt>: image-server port and connected
+clients (see below). </dd>
 <dd>The photometry fields (<tt>fwhm</tt>, <tt>flux</tt>, <tt>peak</tt>,
 <tt>back</tt>, <tt>dx</tt>, <tt>dy</tt>, <tt>az</tt>, <tt>el</tt>,
 <tt>gfps</tt>) hold the last measurement; they are only updated while
 guiding. </dd>
 </dl>
+
+<p>
+<hr> <!-- ===================================================== -->
+<p>
+
+<h2>Image Server</h2>
+
+A second port serves FITS frames to any number of clients, so a display,
+a quicklook tool and a recorder can all read from the guider at once.
+It is independent of the command port above and of the (deprecated)
+<tt>send</tt> push.
+
+<p>
+The port is <tt>image_port + gnum</tt>, default <tt>52300+gnum</tt>.
+Set <tt>image_port</tt> in the configuration file; <tt>0</tt> disables the
+server. At most 4 clients may be connected at once; a fifth is refused
+with <tt>"-Etoo many clients"</tt>.
+
+<p>
+There is one command:
+
+<dl>
+<dt><b>fits [ timeout ]</b> </dt>
+<dd>Returns <tt>"&lt;seq&gt; &lt;ts_ns&gt; &lt;nbytes&gt;[LF]"</tt> followed
+by <tt>nbytes</tt> of FITS.</dd>
+<dd><tt>timeout</tt> is how many seconds to wait for a frame newer than the
+last one served <i>on this connection</i>. The default, <tt>0</tt>, returns
+the newest frame available immediately, even if that connection has already
+seen it.</dd>
+<dd>Nothing new within <tt>timeout</tt> returns <tt>"-Enodata"</tt>. Any
+other failure returns <tt>"-E&lt;message&gt;"</tt>, for example
+<tt>"-EZWO not acquiring"</tt> when the exposure loop is stopped.</dd>
+</dl>
+
+<p>
+The guider state travels in the FITS header, so a frame is self-contained:
+<tt>GDINIT</tt>, <tt>GDLOOP</tt>, <tt>GDGUIDE</tt>, <tt>GDMODE</tt>,
+<tt>GDFMODE</tt>, <tt>GDMMODE</tt>, <tt>GDAVG</tt>, <tt>CCDOFFS</tt>,
+<tt>GDSEND</tt>, <tt>TEMPSET</tt>, <tt>COOLER</tt>, <tt>CAMFPS</tt>,
+<tt>GDFPS</tt>, <tt>GDFWHM</tt>, <tt>GDFLUX</tt>, <tt>GDPEAK</tt>,
+<tt>GDBACK</tt>, <tt>GDDX</tt>, <tt>GDDY</tt>, <tt>GDAZ</tt>, <tt>GDEL</tt>,
+<tt>GDBOXX</tt>, <tt>GDBOXY</tt>, <tt>GDBOXSZ</tt>, <tt>GDPA</tt>,
+<tt>GDSENS</tt> and <tt>FRAMETS</tt> (the server-side frame time in
+nanoseconds, <tt>0</tt> if the camera server predates v1.0.5). These mirror
+the <tt>status</tt> command exactly &ndash; both are filled from the same
+snapshot, so they cannot disagree.
+
+<p>
+<b>Note</b>: the pixels are the ones the guider works on. They are shifted
+right by 2 bits on receipt, and when <tt>av</tt> is non-zero they are a
+rolling average of several exposures &ndash; <tt>GDAVG</tt> says how many,
+and <tt>FRAMETS</tt> is the newest contributing frame. They are not raw
+camera values.
+
+<p>
+<tt>src/py/gcamclient.py</tt> is a reference client:
+
+<pre>
+    ./gcamclient.py --host rpi --gnum 3 --count 10 --timeout 2 --out /tmp/f.fits
+</pre>
 
 <p>
 <hr> <!-- ===================================================== -->
