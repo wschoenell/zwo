@@ -482,7 +482,7 @@ TELGUIDE= '10'
 <dd>
 <p>
 <a name="inifile"></a>
-<dt>"-f" file (located in GCAMZWOPATH or /opt/gcamzwo if not set) </dt>
+<dt>"-f" file (located in GCAMZWOINI or /opt/gcamzwo if not set) </dt>
 <dd>load configuration from ASCII file containing one 'keyword value' pair
     per line; e.g.  
     <a href="./pfs.ini">pfs.ini</a>: </dd>
@@ -508,6 +508,14 @@ TELGUIDE= '10'
 <dd><i>sw 6</i>: slit width, used for fit in 'gm4' ('sw')  </dd>
 <dd><i>sn 0.7</i>: guider control loop sensitivity ('sn')  </dd>
 <dd><i>exptime 0.5</i>: exposure time in seconds ('exptime')  </dd>
+<dd><i>name IMACS_SH</i>: guider name, shown in the title bar and log  </dd>
+<dd><i>image_port 52300</i>: base port of the
+    <a href="#imageserver">image server</a>; the server listens on
+    <i>image_port</i>+<i>gnum</i>. <tt>0</tt> disables it.
+    [default=52300]  </dd>
+<dd><i>send_host lab-pi-01</i>, <i>send_port 5000</i>: destination of the
+    <b>deprecated</b> 'send' push. Superseded by the image server and
+    scheduled for removal.  </dd>
 </dl>
 <p>
 <dt>"-h" host: <dt>
@@ -753,6 +761,7 @@ xterm&gt; nc localhost 52201
 <dd>returns "OK". </dd>
 <dt><b>version</b> </dt>
 <dd>returns "0.322" </dd>
+<a name="status"></a>
 <dt><b>status</b> </dt>
 <dd>returns the current guider state as a single line of
 <tt>key=value</tt> pairs, separated by blanks, e.g.<br>
@@ -789,6 +798,7 @@ guiding. </dd>
 <hr> <!-- ===================================================== -->
 <p>
 
+<a name="imageserver"></a>
 <h2>Image Server</h2>
 
 A second port serves FITS frames to any number of clients, so a display,
@@ -819,17 +829,10 @@ other failure returns <tt>"-E&lt;message&gt;"</tt>, for example
 </dl>
 
 <p>
-The guider state travels in the FITS header, so a frame is self-contained:
-<tt>GDINIT</tt>, <tt>GDLOOP</tt>, <tt>GDGUIDE</tt>, <tt>GDMODE</tt>,
-<tt>GDFMODE</tt>, <tt>GDMMODE</tt>, <tt>GDAVG</tt>, <tt>CCDOFFS</tt>,
-<tt>GDSEND</tt>, <tt>TEMPSET</tt>, <tt>COOLER</tt>, <tt>CAMFPS</tt>,
-<tt>GDFPS</tt>, <tt>GDFWHM</tt>, <tt>GDFLUX</tt>, <tt>GDPEAK</tt>,
-<tt>GDBACK</tt>, <tt>GDDX</tt>, <tt>GDDY</tt>, <tt>GDAZ</tt>, <tt>GDEL</tt>,
-<tt>GDBOXX</tt>, <tt>GDBOXY</tt>, <tt>GDBOXSZ</tt>, <tt>GDPA</tt>,
-<tt>GDSENS</tt> and <tt>FRAMETS</tt> (the server-side frame time in
-nanoseconds, <tt>0</tt> if the camera server predates v1.0.5). These mirror
-the <tt>status</tt> command exactly &ndash; both are filled from the same
-snapshot, so they cannot disagree.
+The guider state travels in the FITS header, so a frame is
+self-contained &ndash; see <a href="#fitsheader">FITS Header</a> for the
+keywords. They mirror the <a href="#status"><tt>status</tt></a> command
+exactly: both are filled from the same snapshot, so they cannot disagree.
 
 <p>
 <b>Note</b>: the pixels are the ones the guider works on. They are shifted
@@ -844,6 +847,66 @@ camera values.
 <pre>
     ./gcamclient.py --host rpi --gnum 3 --count 10 --timeout 2 --out /tmp/f.fits
 </pre>
+
+<p>
+<hr> <!-- ===================================================== -->
+<p>
+
+<a name="fitsheader"></a>
+<h2>FITS Header</h2>
+
+The same header is written by the <b>write</b> command, served by the
+<a href="#imageserver">image server</a>, and sent by the deprecated
+<b>send</b> push &ndash; they share one builder.
+
+<p>
+<b>Note (v1.0.6)</b>: the header grew from two 2880-byte blocks to three
+(5760 &rarr; 8640 bytes) to make room for the guider keywords below.
+Readers that scan for the <tt>END</tt> card &ndash; any FITS library, and
+<tt>getimages</tt> &ndash; are unaffected. A reader that assumes a
+fixed-size header, or seeks to the data at a hardcoded offset, must be
+updated.
+
+<p>
+Guider keywords, added in v1.0.6. They mirror the
+<a href="#status"><b>status</b></a> command and are filled from the same
+snapshot, so the two cannot disagree:
+
+<dl>
+<dd><tt>GDINIT</tt>, <tt>GDLOOP</tt>: camera initialized / acquisition
+    loop running (0 or 1) </dd>
+<dd><tt>GDGUIDE</tt>: 0=off, 2..5=active mode (&lt;F2&gt;..&lt;F5&gt;),
+    negative while the first correction is still pending </dd>
+<dd><tt>GDMODE</tt>, <tt>GDFMODE</tt>, <tt>GDMMODE</tt>: guide, function
+    and mouse mode ('gm', 'fm', 'mm') </dd>
+<dd><tt>GDAVG</tt>: frames in the rolling average ('av') </dd>
+<dd><tt>GDFWHM</tt> [pixels], <tt>GDFLUX</tt>, <tt>GDPEAK</tt>,
+    <tt>GDBACK</tt>: last measurement </dd>
+<dd><tt>GDDX</tt>, <tt>GDDY</tt>: centroid offset from the guide box
+    [pixels] </dd>
+<dd><tt>GDAZ</tt>, <tt>GDEL</tt>: last correction sent to the telescope
+    [arcsec] </dd>
+<dd><tt>GDBOXX</tt>, <tt>GDBOXY</tt>, <tt>GDBOXSZ</tt>: guide box centre
+    and size [pixels] ('bx') </dd>
+<dd><tt>GDPA</tt> [deg], <tt>GDSENS</tt> ('sn'), <tt>GDSEND</tt>
+    ('send') </dd>
+<dd><tt>CCDOFFS</tt>, <tt>TEMPSET</tt> [C], <tt>COOLER</tt> [%],
+    <tt>CAMFPS</tt>, <tt>GDFPS</tt>: camera offset, cooler setpoint and
+    power, camera and guider-loop frame rates </dd>
+<dd><tt>FRAMETS</tt>: time the <i>zwoserver</i> received the frame from
+    the camera, in nanoseconds since the epoch. <tt>0</tt> if the server
+    predates v1.0.5. Under a rolling average this is the newest
+    contributing frame. </dd>
+</dl>
+
+<p>
+The photometry keywords hold the <i>last</i> measurement and are only
+updated while guiding; when the guider has never run they read 0.
+
+<p>
+<b>Pixel values</b> are not raw camera counts. They are shifted right by
+2 bits when received, and with <tt>GDAVG</tt> &gt; 0 they are a rolling
+average of several exposures.
 
 <p>
 <hr> <!-- ===================================================== -->
