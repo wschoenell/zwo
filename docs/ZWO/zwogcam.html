@@ -511,6 +511,13 @@ TELGUIDE= '10'
     <a href="#imageserver">image server</a>; the server listens on
     <i>image_port</i>+<i>gnum</i>. <tt>0</tt> disables it.
     [default=52300]  </dd>
+<dd><i>tcs_age 1.0</i>: how long the telescope block in the FITS header
+    may be reused before it is re-read from the TCS [seconds].
+    Shared by every image-server client, so the TCS sees at most one
+    refresh per <i>tcs_age</i> however many clients are connected, and
+    none at all when nobody is pulling. The TCS updates no value more
+    than 5 times per second, so values below 0.2 buy nothing.
+    <tt>0</tt> refreshes on every request. [default=1.0]  </dd>
 <dd><i>send_host lab-pi-01</i>, <i>send_port 5000</i>: destination of the
     <b>deprecated</b> 'send' push. Superseded by the image server and
     scheduled for removal.  </dd>

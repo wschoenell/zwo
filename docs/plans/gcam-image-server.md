@@ -194,10 +194,29 @@ asks, and log any cap applied rather than silently truncating.
 
 ### TCS metadata
 
-`update_status()` opens a TCS connection and issues eight-plus queries
-before closing ([zwogcam.c:1974](../../src/gcam/zwogcam.c#L1974)). It must
-not run per client per frame. Cache the TCS block and refresh on the
-existing `run_tele` cadence (~30 s), shared by all clients.
+`update_status()` opens a TCS connection and issues ~15 queries before
+closing ([zwogcam.c:1974](../../src/gcam/zwogcam.c#L1974)). It must not run
+per client per frame. The block is cached and refreshed at most every
+`tcs_age` seconds (`.ini` key, default **1.0**), shared by all clients.
+
+The TCS protocol doc (`lco-software/hw-docs/operations/TCS_communication.asciidoc`,
+"Update rates") states that **no value is updated more than 5 times per
+second**, so anything below 0.2 s buys nothing. 1 s keeps the fastest-moving
+header values (rotator angle, ZD, airmass) fresh to well under a pixel at
+the frame edge, where 30 s would allow several pixels of field rotation near
+zenith. For reference gcam's own `pa_interval` — how often it re-reads the
+position angle it guides by — defaults to 30 s.
+
+Measured with a responsive TCS: idle costs **0** requests/s; three clients
+each pulling ~10 fps cost **~15** requests/s in total, i.e. one refresh per
+second shared, versus ~450/s if the block were fetched per delivery.
+
+That doc also says clients "should use the 'dump' requests which return
+multiple values whenever possible". `update_status()` currently issues ~15
+single-value queries; they collapse onto four dumps (`datetime`, `telpos`,
+`teldata`, `gdr1data`/`gdr2data`) plus `telfocus` and `rotatore`.
+`magsoft/activeoptics/fitsrcvr/fitsrcvr.py` already maps its FITS keywords
+that way. Worth doing as its own change.
 
 ### Pixel semantics to document, not hide
 

@@ -140,6 +140,7 @@
 
 #define TCPIP_PORT      (50000+(100*PROJECT_ID))
 #define IMAGE_PORT      (TCPIP_PORT+100)   /* image server v1.0.6 */
+#define IMAGE_TCSAGE    1.0                /* [s] TCS cache lifetime */
 
 #define PREFUN          __func__
 
@@ -331,6 +332,7 @@ int main(int argc,char **argv)
     .send_host = "localhost",
     .send_port = 0,
     .image_port = IMAGE_PORT,          /* v1.0.6 */
+    .tcs_age = IMAGE_TCSAGE,
     .host = "localhost",
     .rPort = 0,
     .sens = 0.5f,
@@ -2877,7 +2879,8 @@ static int read_inifile(Guider *g,const char* name) /* v0415 */
       else if (!strcmp(key,"port")) g->rPort = atoi(val); 
       else if (!strcmp(key,"send_host")) strcpy(g->send_host,val);
       else if (!strcmp(key,"send_port")) g->send_port = atoi(val);
-      else if (!strcmp(key,"image_port")) g->image_port = atoi(val); /* v1.0.6 */ 
+      else if (!strcmp(key,"image_port")) g->image_port = atoi(val); /* v1.0.6 */
+      else if (!strcmp(key,"tcs_age")) g->tcs_age = fmax(0.0,atof(val)); /* v1.0.6 */ 
       else if (!strcmp(key,"gain")) strcpy(g->gain,val);
       else if (!strcmp(key,"mode")) setup_m_switch(val[0]);
       else if (!strcmp(key,"gnum")) g->gnum = atoi(val);
@@ -3028,7 +3031,6 @@ static void* run_tcpip(void* param)
 /* available immediately. Nothing new -> "-Enodata".                  */
 
 #define IMAGE_MAXCLIENTS  4
-#define IMAGE_TCSAGE      30.0         /* [s] TCS cache lifetime */
 
 static pthread_mutex_t tcsLock=PTHREAD_MUTEX_INITIALIZER;
 static double          tcs_last=0.0;
@@ -3045,14 +3047,14 @@ static void image_clients(Guider* g,int d)   /* +1 / -1 */
 
 /* --- */
 
-/* Refresh the shared TCS block at most every IMAGE_TCSAGE seconds,   */
+/* Refresh the shared TCS block at most every 'tcs_age' seconds,      */
 /* however many clients are connected. Must be called with no frame   */
 /* read-lock held -- it does blocking network I/O.                    */
 
 static void tcs_cache(Guider* g)
 {
   pthread_mutex_lock(&tcsLock);
-  if ((walltime(0)-tcs_last) >= IMAGE_TCSAGE) {
+  if ((walltime(0)-tcs_last) >= g->tcs_age) {
     update_tcs(&g->status);
     tcs_last = walltime(0);
   }

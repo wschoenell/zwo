@@ -65,6 +65,7 @@ typedef struct guider_tag {
   volatile double fps,flux,ppix,back,fwhm,dx,dy;
   /* image server v1.0.6 -- independent of the legacy push below */
   int           image_port;
+  double        tcs_age;               /* TCS cache lifetime [s] */
   volatile int  image_clients;
   volatile Bool image_running;
   /* setup parameters (.ini file) */
