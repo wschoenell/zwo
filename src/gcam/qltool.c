@@ -83,7 +83,7 @@ static Visual     *theVisual=NULL;
 static int        vdepth,bdepth;
 static Colormap   theCmap;
 static int        numcols=0,lastcol;
-static u_long     black,green,yellow,white,red,lgrey,l_off=0;
+static u_long     black,green,yellow,white,red,lgrey,orange,l_off=0;
 
 /* function prototype(s) */
  
@@ -142,6 +142,7 @@ QlTool* qltool_create(MainWindow* mw,Window parent,const char* fontname,
   qlt->gmode = 0;
   qlt->vrad = 20;                      /* was 15 v0416 */
   qlt->smoothing = 1;
+  qlt->nfov = 0;                       /* loadfov */
 
   qlt->enoise = 1.5;
   qlt->egain = 0.5;
@@ -206,6 +207,7 @@ QlTool* qltool_create(MainWindow* mw,Window parent,const char* fontname,
       l_off = xcol.pixel;
     }
     yellow = app->yellow; white = app->white; red = app->red;
+    orange = app->orange;              /* loadfov overlay */
   }
   CBX_Unlock();
 
@@ -979,6 +981,41 @@ static void draw_cross(u_int *p,u_int c,int iw,int ih,
   }
 }
 
+/* --- */
+
+static void draw_line(u_int *p,u_int c,int iw,int ih,  /* loadfov */
+                      int x1,int y1,int x2,int y2)
+{
+  int i,x,y,n=imax(1,imax(abs(x2-x1),abs(y2-y1)));
+
+  for (i=0; i<=n; i++) {
+    x = x1 + (int)my_round((double)(x2-x1)*i/n,0);
+    y = y1 + (int)my_round((double)(y2-y1)*i/n,0);
+    if ((x >= 0) && (x < iw) && (y >= 0) && (y < ih)) p[x+y*iw] = c;
+  }
+}
+
+/* --- */
+
+static void draw_fov(QlTool* qlt,u_int *p)  /* loadfov: ds9 boxes */
+{
+  int i,j,x[4],y[4];
+
+  for (i=0; i<qlt->nfov; i++) {
+    FovBox *b = &qlt->fov[i];
+    double s = sin(b->a*M_PI/180.0),c = cos(b->a*M_PI/180.0);
+    for (j=0; j<4; j++) {              /* corners in drawing order */
+      double dx = ((j==1) || (j==2)) ? b->w/2.0 : -b->w/2.0;
+      double dy = (j >= 2) ? b->h/2.0 : -b->h/2.0;
+      x[j] = (int)my_round((b->x + dx*c - dy*s)/qlt->MulX,0);
+      y[j] = (int)my_round((b->y + dx*s + dy*c)/qlt->MulY,0);
+    }
+    for (j=0; j<4; j++) {
+      draw_line(p,orange,qlt->iWIDE,qlt->iHIGH,x[j],y[j],x[(j+1)%4],y[(j+1)%4]);
+    }
+  }
+}
+
 /* ---------------------------------------------------------------- */
 
 static void do_lupe24(QlTool* qlt)
@@ -1260,6 +1297,7 @@ static void create_image(QlTool* qlt,int min,int dyn,void* p0)
     double a2 = qlt->arc_angle + 30.0;
     draw_arc(p0,yellow,qlt->iWIDE,qlt->iHIGH,xc,yc,r,a1,a2); /* v0418 */
   }
+  draw_fov(qlt,(u_int*)p0);            /* loadfov overlay */
 
   if (qlt->flip_x) do_flip_x(qlt,p0);
   if (qlt->flip_y) do_flip_y(qlt,p0);  

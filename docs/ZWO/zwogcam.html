@@ -687,6 +687,21 @@ TELGUIDE= '10'
 </dt>
 <p> </p>
 
+<a name="loadfov"></a>
+<dt><b>loadfov [file[.fov]]</b> </dt>
+<dd>Draw the boxes listed in a ds9 region file on top of the image (orange);
+    without a parameter, remove them. The file is opened relative to the
+    current directory (or the path given) and ".fov" is appended when the
+    name has no extension. </dd>
+<dd>One entity per line; only "box" is supported:
+    <code>box x y width height [angle]</code>
+    in ds9 image coordinates (1-based pixel centre, full size in pixels,
+    angle in degrees counter-clockwise). The ds9 form
+    <code>box(x,y,w,h,a)</code> is accepted too; other lines are ignored. </dd>
+<dd>Example: <a href="../../etc/ini/baade_gcam/llamas.fov">llamas.fov</a>,
+    the 35"x35" LLAMAS IFU footprint on Baade gcam2. </dd>
+<p> </p>
+
 <dt><b>curcol {dark,light}</b> </dt>
 <dd>dark: black cursor color </dd>
 <dd>light: light grey cursor color [default] </dd>

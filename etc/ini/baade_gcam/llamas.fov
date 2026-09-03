@@ -1,0 +1,14 @@
+# Region file format: DS9 version 4.1
+# LLAMAS IFU footprint on Baade gcam2 (gcam42, mode 4: 2000x2000 px, bin 2,
+# px = 50 mas/px from gcam42.ini) -- load in zwogcam with "loadfov llamas"
+#
+# box  x  y  width  height  angle   (ds9 image coords, 1-based, centre + full size)
+#
+# centre : gcam2 cursor 1048,1008 measured by GPr on 2026-08-31 (Magellan1 night
+#          report), written here as 1049,1009 (ds9 is 1-based, gcam cursors are 0-based).
+#          earlier value 1108,890 on 2024-12-03 was for the 1st target, not the full bundle.
+#          refine during engineering.
+# size   : 35" x 35" = 700 x 700 px at 0.050"/px
+# angle  : expected 200 deg (gcam fixed to the IFU on the rotator); verify on sky.
+image
+box 1049 1009 700 700 200

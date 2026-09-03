@@ -264,6 +264,7 @@ static void*   run_tcpip         (void*);
 
 static void    make_mask         (Guider*,const char*);
 static void    load_mask         (Guider*);
+static void    load_fov          (Guider*,const char*);
 
 static int     check_datapath    (char*,int);
 static int     cursor_blocked    (Guider*,int,int);
@@ -1278,7 +1279,7 @@ static int handle_command(Guider* g,const char* command,int showMsg)
     return 0;
   }
 
-  if (strlen(command) < 32) {          /* v0065 */
+  if (strlen(command) < sizeof(buf)-2) { /* v0065, was 32: paths for 'loadfov' */
     char *p1=(char*)command,*p2=buf;   /* separate parameter from command */
     do {                               /* eg. tf1 --> tf 1 */
       if (isupper(*p1) != islower(*p1)) {
@@ -1575,6 +1576,9 @@ static int handle_command(Guider* g,const char* command,int showMsg)
   if (!strncasecmp(cmd,"curcol",4)) {  /* cursor color v0321 */
     if (!strcmp(par1,"dark")) g->qltool->cursor_dark = 1;
     else                      g->qltool->cursor_dark = 0;
+  } else
+  if (!strcasecmp(cmd,"loadfov")) {    /* ds9 'box' overlay */
+    load_fov(g,par1);
   } else
   if (!strncasecmp(cmd,"magpix",4)) {  /* show pixel values in mag.center */
     showMagPix = 1-showMagPix;         /* toggle */
@@ -2271,6 +2275,45 @@ static char* mask_name(Guider *g,char *name)
     sprintf(name,"zwo%s_%d.mask",server->serialNumber,server->aoiW);
   }
   return name;
+}
+
+/* --- */
+
+/* Load ds9 'box' regions from a file and draw them on the image;   */
+/* no parameter clears the overlay -- docs/plans/gcam-load-fov.md    */
+
+static void load_fov(Guider *g,const char* par)
+{
+  QlTool *qlt = g->qltool;
+  FILE   *fp=NULL;
+  char   file[256],line[256],*p;
+  int    n=0;
+
+  if (*par) {
+    snprintf(file,sizeof(file),"%s",par);
+    p = strrchr(file,'/'); if (!p) p = file;
+    if (!strchr(p,'.')) strncat(file,".fov",sizeof(file)-strlen(file)-1);
+    fp = fopen(file,"r");
+    if (!fp) {
+      snprintf(line,sizeof(line),"failed to load %s",file);
+      message(g,line,MSS_WARN);
+      return;
+    }
+  }
+  pthread_mutex_lock(&qlt->lock);      /* create_image() reads fov[] */
+  while (fp && (n < QLT_NFOV) && fgets(line,sizeof(line),fp)) {
+    for (p=line; *p; p++) if (strchr("(),",*p)) *p = ' '; /* box(x,y,w,h,a) */
+    FovBox b = {0,0,0,0,0};
+    if (sscanf(line,"box %f %f %f %f %f",&b.x,&b.y,&b.w,&b.h,&b.a) >= 4) {
+      b.x -= 1; b.y -= 1;              /* ds9 image coords are 1-based */
+      qlt->fov[n++] = b;
+    }
+  }
+  qlt->nfov = n;
+  pthread_mutex_unlock(&qlt->lock);
+  if (fp) fclose(fp);
+  qltool_redraw(qlt,False);
+  sprintf(g->command_msg,"%d box(es)",n);
 }
 
 /* --- */

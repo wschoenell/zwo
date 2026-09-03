@@ -9,6 +9,9 @@
 #define QLT_NCOLORS     200
 #define QLT_NCURSORS    5
 #define QLT_BOX         (QLT_NCURSORS-1)
+#define QLT_NFOV        64             /* loadfov: max. boxes */
+
+typedef struct { float x,y,w,h,a; } FovBox;  /* ds9 box, frame pixels */
 
 enum guider_modes { GM_PR=1,GM_SH,GM_SV3,GM_SV4,GM_SV5 };
 
@@ -60,6 +63,9 @@ typedef struct qltool_tag {
   float          cursor_step;
   /* arc in gm5 */
   double    arc_radius,arc_angle;
+  /* loadfov overlay */
+  FovBox    fov[QLT_NFOV];
+  int       nfov;
 } QlTool;
 
 QlTool* qltool_create   (MainWindow*,Window,const char*,int,int,int,
