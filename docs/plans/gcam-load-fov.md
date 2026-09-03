@@ -201,6 +201,8 @@ and is unrelated to the box angle.
 the 700 px box at 200°, the guide box at the frame centre, and the
 message log for `loadfov llamas` → `1 box(es)` and `loadfov` → `0 box(es)`.*
 
+Screen recording of the same session: [loadfov-llamas-sim.mp4](../images/loadfov-llamas-sim.mp4) (12 s).
+
 Build on macOS with the makefile as is (`make` in `src/gcam`, the
 active config is the macOS block). Then, against the emulator rig or a
 live zwoserver:
