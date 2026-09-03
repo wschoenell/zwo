@@ -13,10 +13,12 @@ of the live image, the same way the guide box and cursors are drawn:
 loadfov [filename[.fov]]
 ```
 
-- `loadfov NAME` opens `NAME` relative to the current working
-  directory (or the path given), appending `.fov` when the name has no
-  extension, replaces the current overlay set with the file's contents
-  and redraws.
+- `loadfov NAME` opens `NAME` relative to gcam's working directory,
+  which is its data path (`GCAMZWOPATH`, `/opt/gcamzwo` by default:
+  gcam `chdir()`s there at start-up, `check_datapath()`), or as given
+  when absolute, appending `.fov` when the name has no extension;
+  replaces the current overlay set with the file's contents and
+  redraws.
 - `loadfov` with no argument erases all loaded entities and redraws.
 - The overlay is drawn in **orange** (`app->orange`, already allocated
   by cxt); colour becomes a parameter in a later version, not this PR.

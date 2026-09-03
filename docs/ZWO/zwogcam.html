@@ -690,9 +690,10 @@ TELGUIDE= '10'
 <a name="loadfov"></a>
 <dt><b>loadfov [file[.fov]]</b> </dt>
 <dd>Draw the boxes listed in a ds9 region file on top of the image (orange);
-    without a parameter, remove them. The file is opened relative to the
-    current directory (or the path given) and ".fov" is appended when the
-    name has no extension. </dd>
+    without a parameter, remove them. A relative name is looked up in the
+    gcam data directory (GCAMZWOPATH, /opt/gcamzwo if not set, where the
+    masks live), an absolute path is used as is; ".fov" is appended when
+    the name has no extension. </dd>
 <dd>One entity per line; only "box" is supported:
     <code>box x y width height [angle]</code>
     in ds9 image coordinates (1-based pixel centre, full size in pixels,
