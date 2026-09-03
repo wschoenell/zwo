@@ -195,6 +195,12 @@ and is unrelated to the box angle.
 
 ## Verification
 
+![loadfov llamas on the emulator](../images/loadfov-llamas-sim.png)
+
+*llamas.fov loaded on gcamzwo against the ZWO emulator (2026-09-03):
+the 700 px box at 200°, the guide box at the frame centre, and the
+message log for `loadfov llamas` → `1 box(es)` and `loadfov` → `0 box(es)`.*
+
 Build on macOS with the makefile as is (`make` in `src/gcam`, the
 active config is the macOS block). Then, against the emulator rig or a
 live zwoserver:
