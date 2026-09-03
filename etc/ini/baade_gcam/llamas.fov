@@ -10,5 +10,8 @@
 #          refine during engineering.
 # size   : 35" x 35" = 700 x 700 px at 0.050"/px
 # angle  : expected 200 deg (gcam fixed to the IFU on the rotator); verify on sky.
+#
+# the 'image' line below is ignored by gcam (only 'box' lines are read); it is
+# kept so ds9 opens this file in image coordinates on a frame from the image server.
 image
 box 1049 1009 700 700 200

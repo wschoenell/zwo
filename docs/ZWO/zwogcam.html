@@ -697,7 +697,10 @@ TELGUIDE= '10'
     <code>box x y width height [angle]</code>
     in ds9 image coordinates (1-based pixel centre, full size in pixels,
     angle in degrees counter-clockwise). The ds9 form
-    <code>box(x,y,w,h,a)</code> is accepted too; other lines are ignored. </dd>
+    <code>box(x,y,w,h,a)</code> is accepted too. Every other line is
+    ignored, including the ds9 header lines ("# Region file format",
+    "global", "image"); keeping them makes the same file loadable in
+    ds9 on a frame from the image server, in image coordinates. </dd>
 <dd>Example: <a href="../../etc/ini/baade_gcam/llamas.fov">llamas.fov</a>,
     the 35"x35" LLAMAS IFU footprint on Baade gcam2. </dd>
 <p> </p>
