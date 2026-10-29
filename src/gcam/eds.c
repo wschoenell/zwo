@@ -256,12 +256,12 @@ static char* eds_82i(char* buf,int gn,int cur,float x,float y)
 {
   char msg[128];
 
-#if 1  // old format (%04d%04d)    but not x 10
-  sprintf(msg,"82%d;%04d%04d",cur,(int)my_round(x,0),
-                                  (int)my_round(y,0));
-#else // EDS-82i format v0347
-  sprintf(msg,"82%d; %.1f %.1f ",cur,my_round(x,1),my_round(y,1));
-#endif
+  /* tenths of a pixel, 5+5 digits; the DOS cameras write 4+4, and readers
+   * tell them apart by width (up to v1.1.1: "%04d%04d", whole pixels) */
+  int xi = (int)my_round(10.0*x,0),yi = (int)my_round(10.0*y,0);
+  xi = (xi < 0) ? 0 : (xi > 99999) ? 99999 : xi;
+  yi = (yi < 0) ? 0 : (yi > 99999) ? 99999 : yi;
+  sprintf(msg,"82%d;%05d%05d",cur,xi,yi);
 
   return eds_wrap(buf,gn,msg);
 }

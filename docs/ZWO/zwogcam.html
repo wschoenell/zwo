@@ -637,6 +637,11 @@ TELGUIDE= '10'
 <dd>set cursor 'c' to coordinate 'x,y'   </dd>
 <dt><b>xyr <i>c x y</i></b> </dt>
 <dd>move cursor 'c' by 'x,y' pixels  </dd>
+<dd>Every cursor change is reported to the TCSIS as an EDS 82c record,
+    <tt>82c;XXXXXYYYYY</tt>: tenths of a pixel, five digits per axis.
+    Up to v1.1.1 gcamzwo wrote whole pixels as four digits, the width the
+    DOS cameras use for tenths of a 1000-unit frame; tcsis and libtcsuser
+    decode the record by its width. </dd>
 <dt><b></b> </dt>
 <dd>  </dd>
 <p>
