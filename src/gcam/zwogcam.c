@@ -1577,6 +1577,30 @@ static int handle_command(Guider* g,const char* command,int showMsg)
       eds_send82i(g->gnum,1+g->qltool->cursor_mode,x,y); /* v0347 */
     }
   } else
+  if (!strcasecmp(cmd,"xyo")) {        /* offset guide box by sky arcsec */
+    /* cursor 5 by the pixels whose sky offset is (daz,del) arcsec, the
+     * inverse of mouse mode 2: callers need no scale, angle or parity */
+    if (n > 2) {
+      if (!cursor_blocked(g,QLT_BOX,1)) {
+        if (g->pamode) {
+          err = telio_open(2);
+          if (!err) { err = set_pa(g,g->pa,1); telio_close(); }
+        }
+        if (!err) { double daz=atof(par1),del=atof(par2),radpa,xi,yi;
+          radpa = fabs(g->pa)/RADS;
+          xi =  g->parity*(daz*cos(radpa) - del*sin(radpa));  /* arcsec */
+          yi = -(daz*sin(radpa) + del*cos(radpa));
+          g->qltool->curx[QLT_BOX] += (float)(xi/g->px);
+          g->qltool->cury[QLT_BOX] += (float)(yi/g->px);
+          g->qltool->cursor_mode = QLT_BOX;
+          redraw_gwin(g);
+          qltool_redraw(g->qltool,False);
+          eds_send82i(g->gnum,1+QLT_BOX,g->qltool->curx[QLT_BOX],
+                                        g->qltool->cury[QLT_BOX]);
+        }
+      }
+    } else err = E_MISSPAR;
+  } else
   /* --- extended commmand set ------------------------------------ */
   if (!strncasecmp(cmd,"lmag",3)) {    /* lupe magnification */
     if (*par1) qltool_lmag(g->qltool,atoi(par1));
