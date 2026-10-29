@@ -319,6 +319,7 @@ int main(int argc,char **argv)
     .elsign = -1.0,
     .rosign = 0.0,
     .parity = -1.0,
+    .mount = 0.0,                 /* ini "mount": added to a received ca */
     .parit2 = 1.0,
     .offx = 0,                    /* PFS:-10+85, MIKE:+45+230 */
     .offy = 0,
@@ -2518,6 +2519,7 @@ static int set_ca(Guider* g,double f)
   fprintf(stderr,"%s(%s,%f)\n",PREFUN,g->name,f);
 #endif
 
+  f += g->mount;                       /* camera mounting offset (ini) */
   if (f == 0.0) f = 360.0;
   while (f >  360.0) f -= 360.0;
   while (f <    0.0) f += 360.0;
@@ -2934,6 +2936,7 @@ static int read_inifile(Guider *g,const char* name) /* v0415 */
       else if (!strcmp(key,"elsign")) g->elsign = atof(val);
       else if (!strcmp(key,"rosign")) g->rosign = atof(val);
       else if (!strcmp(key,"parity")) g->parity = (atof(val) < 0) ? -1.0 : 1.0;
+      else if (!strcmp(key,"mount")) g->mount = atof(val);
       else if (!strcmp(key,"offx")) g->offx = atoi(val);
       else if (!strcmp(key,"offy")) g->offy = atoi(val);
       else if (!strcmp(key,"px")) g->px = atof(val)/1000.0;

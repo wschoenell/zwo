@@ -58,6 +58,7 @@ typedef struct guider_tag {
   u_int       sendNumber;
   float       px;                      /* eff. pixscale (incl. binning) */
   double      angle,elsign,rosign,parity;
+  double      mount;                   /* camera mounting offset, added to a received ca [deg] */
   double      parit2; // todo remove 'parit2' v0417
   double      pa,azerp,elerp,sens,azg,elg;
   pthread_mutex_t mutex;
